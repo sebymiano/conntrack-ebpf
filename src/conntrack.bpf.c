@@ -48,7 +48,8 @@ int xdp_upf(struct xdp_md *ctx) {
 
     bpf_log_debug("Packet parsed, now starting the conntrack.\n");
 
-    struct ct_k key = {0, 0, 0, 0, 0};
+    struct ct_k key;
+	__builtin_memset(&key, 0, sizeof(key));
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
 
@@ -78,7 +79,8 @@ int xdp_upf(struct xdp_md *ctx) {
         portRev = ipRev;
     }
 
-    struct ct_v newEntry = {0, 0, 0, 0, 0};
+    struct ct_v newEntry;
+	__builtin_memset(&newEntry, 0, sizeof(newEntry));
     struct ct_v *value;
 
     uint64_t timestamp;
@@ -92,7 +94,6 @@ int xdp_upf(struct xdp_md *ctx) {
             // connections.delete(&key);
             goto PASS_ACTION;
         }
-
         value = bpf_map_lookup_elem(&connections, &key);
         if (value != NULL) {
             ctr_spin_lock(&value->lock);

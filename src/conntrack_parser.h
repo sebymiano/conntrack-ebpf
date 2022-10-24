@@ -126,6 +126,8 @@ IP:;
             goto DROP;
         pkt->srcPort = udp->source;
         pkt->dstPort = udp->dest;
+    } else {
+        goto DROP;
     }
 
     return 0;
