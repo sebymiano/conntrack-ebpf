@@ -3,14 +3,18 @@ OUTPUT := .output
 CLANG ?= clang
 LLVM_STRIP ?= llvm-strip
 SHELL := /bin/bash
+PKG_CONFIG := pkg-config
 LIBBPF_SRC := $(abspath ../libbpf/src)
 BPFTOOL_SRC := $(abspath ../bpftool/src)
 LIBXDP_SRC := $(abspath ../libxdp)
+LIBARGPARSE_SRC := $(abspath ../libargparse)
 LIBXDP_CONFIGURE := $(abspath ../libxdp/configure)
 LIBBPF_OBJ := $(abspath $(OUTPUT)/libbpf.a)
 LIBBPF_PKGCONFIG := $(abspath $(OUTPUT)/pkgconfig)
-LIBXDP_OBJ := $(abspath $(OUTPUT)/libxdp/libxdp.a)
+LIBXDP_PKGCONFIG := $(abspath $(OUTPUT)/libxdp/lib/pkgconfig)
+LIBXDP_OBJ := $(abspath $(OUTPUT)/libxdp/libxdp.so)
 LIBXDP_OUTPUT := $(abspath $(OUTPUT)/libxdp)
+LIBARGPARSE_OBJ := $(abspath ../libargparse/libargparse.a)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
@@ -18,14 +22,18 @@ VMLINUX := ../vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I../libxdp/headers -I$(dir $(VMLINUX))
+INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(OUTPUT)/libxdp/include -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 APPS = conntrack
 
-# Required by libblazesym
-ALL_LDFLAGS += -lrt -ldl -lpthread -lm
+CONNTRACK_CONFIG_DEPS = libnl-3.0
+CONNTRACK_PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(CONNTRACK_CONFIG_DEPS))
+CONNTRACK_PKG_LIBS := $(shell $(PKG_CONFIG) --static --libs $(CONNTRACK_CONFIG_DEPS))
+
+INCLUDES += $(CONNTRACK_PKG_CFLAGS)
+ALL_LDFLAGS += -lrt -ldl -lpthread -lm $(CONNTRACK_PKG_LIBS)
 
 # Get Clang's default includes on this system. We'll explicitly add these dirs
 # to the includes list when compiling with `-target bpf` because otherwise some
@@ -85,15 +93,21 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
 # Build libxdp
-$(LIBXDP_OBJ): $(BPFTOOL) | $(LIBXDP_OUTPUT)
+$(LIBXDP_OBJ): $(BPFTOOL) $(LIBBPF_OBJ)| $(LIBXDP_OUTPUT)
 	$(call msg,LIBXDP,$@)
 	$(shell cd $(LIBXDP_SRC) && \
-		    PKG_CONFIG_PATH=$(LIBBPF_PKGCONFIG):$(PKG_CONFIG_PATH) && \
 			$(LIBXDP_SRC)/configure > /dev/null 2>&1 )
-	$(Q)$(MAKE) OBJDIR=$(LIBXDP_OUTPUT)/ -C $(LIBXDP_SRC) libxdp
+	$(Q)$(MAKE) OBJDIR=$(LIBXDP_OUTPUT) DESTDIR=$(LIBXDP_OUTPUT) \
+				PREFIX= INCLUDEDIR= LIBDIR= UAPIDIR= \
+				-C $(LIBXDP_SRC) libxdp
+
+# Build bpftool
+$(LIBARGPARSE_OBJ):
+	$(call msg,LIBARGPARSE,$@)
+	$(Q)$(MAKE) -C $(LIBARGPARSE_SRC)
 
 # Build BPF code
-$(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(LIBXDP_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
+$(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
@@ -111,9 +125,13 @@ $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBXDP_OBJ) | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBXDP_OBJ) $(LIBARGPARSE_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
+
+format:
+	clang-format -style=file -i *.c *.h
+	@grep -n "TODO" *.[ch] || true
 
 # delete failed targets
 .DELETE_ON_ERROR:

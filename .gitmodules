@@ -7,3 +7,6 @@
 [submodule "libxdp"]
 	path = libxdp
 	url = https://github.com/xdp-project/xdp-tools.git
+[submodule "libargparse"]
+	path = libargparse
+	url = https://github.com/cofyc/argparse.git

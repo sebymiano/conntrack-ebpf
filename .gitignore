@@ -2,3 +2,4 @@ src/.output
 src/build
 src/conntrack
 src/compile_commands.json 
+.vscode/settings.json
