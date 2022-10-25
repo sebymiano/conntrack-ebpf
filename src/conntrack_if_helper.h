@@ -38,13 +38,12 @@ void nbo_uint_to_mac_string(uint64_t mac, char mac_str[32]) {
         a[i] = (mac >> i * 8) & 0xFF;
     }
 
-    sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", a[0], a[1], a[2], a[3],
-            a[4], a[5]);
+    sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", a[0], a[1], a[2], a[3], a[4], a[5]);
 }
 
 int mac_str_to_byte_array(unsigned int bytes[6], char *mac_str) {
-    if (sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", &bytes[0], &bytes[1],
-               &bytes[2], &bytes[3], &bytes[4], &bytes[5]) != 6) {
+    if (sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", &bytes[0], &bytes[1], &bytes[2], &bytes[3],
+               &bytes[4], &bytes[5]) != 6) {
         printf("%s is an invalid MAC address", mac_str);
         return -1;
     }
@@ -72,8 +71,7 @@ int get_mac_from_iface_name(const char *iface, char mac_str[32]) {
             return -2;
         }
 
-        printf("get_iface_mac error determining the MAC address: %s\n",
-               strerror(errno));
+        printf("get_iface_mac error determining the MAC address: %s\n", strerror(errno));
     }
     close(fd);
 
@@ -81,6 +79,25 @@ int get_mac_from_iface_name(const char *iface, char mac_str[32]) {
     memcpy(&mac_, mac_str, sizeof(mac_));
     nbo_uint_to_mac_string(mac_, mac_str);
     return 0;
+}
+
+int set_iface_up(const char *ifname) {
+    struct ifreq ifr;
+    int sockfd, rv;
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        printf("get_iface_mac error opening socket: %s\n", strerror(errno));
+        return -1;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    ifr.ifr_flags |= IFF_UP;
+    rv = ioctl(sockfd, SIOCSIFFLAGS, &ifr);
+
+    return rv;
 }
 
 #endif // CONNTRACK_IF_HELPERS_H_

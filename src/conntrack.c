@@ -6,20 +6,20 @@
 #include <bpf/bpf.h>
 #include <bpf/btf.h>
 #include <bpf/libbpf.h>
-#include <xdp/prog_dispatcher.h>
-#include <xdp/libxdp.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <assert.h>
 
 #include <argparse.h>
 #include <net/if.h>
-#include "conntrack_if_helper.h"
 
+#include "conntrack_if_helper.h"
 #include "conntrack.skel.h"
 
-static struct xdp_program *xdp_prog_;
-static bool attached = false;
+static __u32 xdp_flags = 0;
 static int ifindex_if1 = 0;
+static int ifindex_if2 = 0;
+static int connections_map_fd = 0;
 
 static const char *const usages[] = {
     "conntrack [options] [[--] args]",
@@ -27,56 +27,97 @@ static const char *const usages[] = {
     NULL,
 };
 
-static int libbpf_print_fn(enum libbpf_print_level level, const char *format,
-                           va_list args) {
+static int libbpf_print_fn(enum libbpf_print_level level, const char *format, va_list args) {
     return vfprintf(stderr, format, args);
+}
+
+static void cleanup_ifaces() {
+    __u32 curr_prog_id = 0;
+
+    if (!bpf_xdp_query_id(ifindex_if1, xdp_flags, &curr_prog_id)) {
+        if (curr_prog_id) {
+            bpf_xdp_detach(ifindex_if1, xdp_flags, NULL);
+        }
+    }
+
+    if (!bpf_xdp_query_id(ifindex_if2, xdp_flags, &curr_prog_id)) {
+        if (curr_prog_id) {
+            bpf_xdp_detach(ifindex_if2, xdp_flags, NULL);
+        }
+    }
 }
 
 void sigint_handler(int sig_no) {
     printf("\nClosing program...\n");
-    if (attached) {
-        xdp_program__detach(xdp_prog_, ifindex_if1, XDP_MODE_NATIVE, 0);
-    }
-    xdp_program__close(xdp_prog_);
-    // conntrack_bpf__destroy(skel);
+    cleanup_ifaces();
     exit(0);
+}
+
+static void poll_stats(int map_fd, int interval, int duration) {
+    unsigned int nr_cpus = libbpf_num_possible_cpus();
+    __u64 values[nr_cpus];
+    __u64 prev = 0;
+    int i;
+    int tot_duration = 0;
+
+    while (1) {
+        __u32 key = 0;
+
+        sleep(interval);
+
+        __u64 sum = 0;
+
+        assert(bpf_map_lookup_elem(map_fd, &key, values) == 0);
+        for (i = 0; i < nr_cpus; i++)
+            sum += values[i];
+        if (sum > prev)
+            printf("%10llu pkt/s\n", (sum - prev) / interval);
+        prev = sum;
+        tot_duration++;
+        if (duration > 0 && tot_duration > duration) {
+            return;
+        }
+    }
 }
 
 int main(int argc, const char **argv) {
     struct conntrack_bpf *skel;
-    // struct xdp_program *xdp_prog_;
     int err;
     int use_spinlocks = 0;
     const char *if1 = NULL;
     const char *if2 = NULL;
-    int ifindex_if2 = 0;
-    int debug_level = 0;
+    int log_level = 0;
+    int metadata_map_fd;
+    int duration = -1;
+    // int interval = 10;
 
     char if1_mac[32];
     char if2_mac[32];
+    // const char *output = NULL;
 
     struct argparse_option options[] = {
         OPT_HELP(),
         OPT_GROUP("Basic options"),
-        OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Use spin locks", NULL,
-                    0, 0),
-        OPT_STRING('1', "iface1", &if1, "Interface to receive packet from",
-                   NULL, 0, 0),
-        OPT_STRING('2', "iface2", &if2, "Interface to redirect packet to", NULL,
-                   0, 0),
-        OPT_INTEGER('d', "debug", &debug_level, "Debug level", NULL, 0, 0),
+        OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Use spin locks", NULL, 0, 0),
+        OPT_STRING('1', "iface1", &if1, "Interface to receive packet from", NULL, 0, 0),
+        OPT_STRING('2', "iface2", &if2, "Interface to redirect packet to", NULL, 0, 0),
+        // OPT_STRING('o', "output", &output, "Dump content of connections map
+        // into output file", NULL, 0, 0),
+        OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
+        OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
+        // OPT_INTEGER('i', "interval", &interval, "Interval on which results
+        // will be saved into the output file", NULL, 0, 0),
         OPT_END(),
     };
 
     struct argparse argparse;
     argparse_init(&argparse, options, usages, 0);
-    argparse_describe(
-        &argparse,
-        "\nThis software attaches an XDP program that emulates the behavior of "
-        "Linux conntrack to the interface specified in the 'iface1' "
-        "argument.scription of what the program does and how it works.",
-        "\nIf 'iface2' argument is specified, packets are redirected to that "
-        "interface instead of dropping them.");
+    argparse_describe(&argparse,
+                      "\nThis software attaches an XDP program that emulates the behavior of "
+                      "Linux conntrack to the interface specified in the 'iface1' "
+                      "argument.scription of what the program does and how it works.",
+                      "\nIf 'iface2' argument is specified, packets are redirected to that "
+                      "interface instead of dropping them.");
     argc = argparse_parse(&argparse, argc, argv);
 
     if (if1 != NULL) {
@@ -86,8 +127,7 @@ int main(int argc, const char **argv) {
             printf("Error while retrieving the ifindex of %s\n", if1);
             exit(1);
         } else {
-            printf("Got ifindex for iface: %s, which is %d\n", if1,
-                   ifindex_if1);
+            printf("Got ifindex for iface: %s, which is %d\n", if1, ifindex_if1);
         }
 
         if (get_mac_from_iface_name(if1, if1_mac) != 0) {
@@ -112,8 +152,7 @@ int main(int argc, const char **argv) {
             printf("Error while retrieving the ifindex of %s\n", if2);
             exit(1);
         } else {
-            printf("Got ifindex for iface: %s, which is %d\n", if2,
-                   ifindex_if2);
+            printf("Got ifindex for iface: %s, which is %d\n", if2, ifindex_if2);
         }
 
         if (get_mac_from_iface_name(if2, if2_mac) != 0) {
@@ -136,7 +175,7 @@ int main(int argc, const char **argv) {
     }
 
     // Setup config for this program
-    skel->rodata->conntrack_cfg.log_level = debug_level;
+    skel->rodata->conntrack_cfg.log_level = log_level;
     skel->rodata->conntrack_cfg.if_index_if1 = ifindex_if1;
     skel->rodata->conntrack_cfg.if_index_if2 = ifindex_if2;
     skel->rodata->conntrack_cfg.enable_spin_locks = use_spinlocks;
@@ -154,14 +193,20 @@ int main(int argc, const char **argv) {
     //     memcpy(skel->rodata->conntrack_mac_cfg.if2_dst_mac, mac_array, 6);
     // }
 
-    xdp_prog_ = xdp_program__from_bpf_obj(skel->obj, "xdp_conntrack");
-    err = xdp_program__attach(xdp_prog_, ifindex_if1, XDP_MODE_NATIVE, 0);
-    if (err) {
-        fprintf(stderr, "Failed to attach XDP program");
-        goto cleanup;
-    } else {
-        attached = true;
+    bpf_program__set_type(skel->progs.xdp_conntrack_prog, BPF_PROG_TYPE_XDP);
+
+    if (ifindex_if2 != 0) {
+        bpf_program__set_type(skel->progs.xdp_redirect_dummy_prog, BPF_PROG_TYPE_XDP);
     }
+
+    err = conntrack_bpf__load(skel);
+    if (err) {
+        fprintf(stderr, "Failed to load XDP program");
+        goto cleanup;
+    }
+
+    metadata_map_fd = bpf_map__fd(skel->maps.metadata);
+    connections_map_fd = bpf_map__fd(skel->maps.connections);
 
     struct sigaction action;
     memset(&action, 0, sizeof(action));
@@ -172,21 +217,43 @@ int main(int argc, const char **argv) {
         goto cleanup;
     }
 
+    if (sigaction(SIGTERM, &action, NULL) == -1) {
+        fprintf(stderr, "sigation failed\n");
+        goto cleanup;
+    }
+
+    xdp_flags = 0;
+    xdp_flags |= XDP_FLAGS_DRV_MODE;
+    set_iface_up(if1);
+    err = bpf_xdp_attach(ifindex_if1, bpf_program__fd(skel->progs.xdp_conntrack_prog), xdp_flags,
+                         NULL);
+    if (err) {
+        fprintf(stderr, "Failed to attach XDP program on: %s", if1);
+        goto cleanup;
+    }
+
+    if (ifindex_if2 != 0) {
+        xdp_flags = 0;
+        xdp_flags |= XDP_FLAGS_DRV_MODE;
+        set_iface_up(if2);
+        err = bpf_xdp_attach(ifindex_if2, bpf_program__fd(skel->progs.xdp_redirect_dummy_prog),
+                             xdp_flags, NULL);
+        if (err) {
+            fprintf(stderr, "Failed to attach XDP program on: %s", if2);
+            goto cleanup;
+        }
+    }
+
     printf("Successfully started! Please run `sudo cat "
            "/sys/kernel/debug/tracing/trace_pipe` "
            "to see output of the BPF programs.\n");
 
-    for (;;) {
-        /* trigger our BPF program */
-        fprintf(stderr, ".");
-        sleep(1);
-    }
+    sleep(500);
+    poll_stats(metadata_map_fd, 1, duration);
 
 cleanup:
-    if (attached) {
-        xdp_program__detach(xdp_prog_, ifindex_if1, XDP_MODE_NATIVE, 0);
-    }
-    xdp_program__close(xdp_prog_);
+    cleanup_ifaces();
+    bpf_object__close(skel->obj);
     conntrack_bpf__destroy(skel);
     return -err;
 }

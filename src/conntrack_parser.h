@@ -41,8 +41,8 @@
 #include "conntrack_common.h"
 #include "conntrack_bpf_log.h"
 
-static FORCE_INLINE bool validate_ethertype(void *data, void *data_end,
-                                            __u16 *h_proto, __u16 *nh_off) {
+static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h_proto,
+                                            __u16 *nh_off) {
     *nh_off = ETH_HLEN;
 
     if (data + *nh_off > data_end)
@@ -57,8 +57,7 @@ static FORCE_INLINE bool validate_ethertype(void *data, void *data_end,
 // parse double vlans
 #pragma unroll
     for (int i = 0; i < 2; i++) {
-        if (*h_proto == bpf_ntohs(ETH_P_8021Q) ||
-            *h_proto == bpf_ntohs(ETH_P_8021AD)) {
+        if (*h_proto == bpf_ntohs(ETH_P_8021Q) || *h_proto == bpf_ntohs(ETH_P_8021AD)) {
             struct _vlan_hdr *vhdr;
             vhdr = (struct _vlan_hdr *)(data + *nh_off);
             *nh_off += sizeof(struct _vlan_hdr);
@@ -72,8 +71,7 @@ static FORCE_INLINE bool validate_ethertype(void *data, void *data_end,
     return true;
 }
 
-static FORCE_INLINE int parse_packet(void *data, void *data_end,
-                                     struct packetHeaders *pkt) {
+static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt) {
     __u16 l3_proto;
     __u16 nh_off;
     struct iphdr *iph;
@@ -87,7 +85,6 @@ static FORCE_INLINE int parse_packet(void *data, void *data_end,
     case bpf_htons(ETH_P_IP):
         goto IP; // ipv4 packet
     case bpf_htons(ETH_P_IPV6):
-        // TODO: Maybe in the future we want to support IPv6 as well
         goto IP6;
         break;
     case bpf_htons(ETH_P_ARP):
@@ -110,8 +107,7 @@ IP:;
     if (iph->protocol == IPPROTO_TCP) {
         struct tcp_hdr *tcp = NULL;
         tcp = (struct tcp_hdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
-        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*tcp) >
-            data_end)
+        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*tcp) > data_end)
             goto DROP;
         pkt->srcPort = tcp->source;
         pkt->dstPort = tcp->dest;
@@ -121,8 +117,7 @@ IP:;
     } else if (iph->protocol == IPPROTO_UDP) {
         struct udphdr *udp = NULL;
         udp = (struct udphdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
-        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*udp) >
-            data_end)
+        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*udp) > data_end)
             goto DROP;
         pkt->srcPort = udp->source;
         pkt->dstPort = udp->dest;

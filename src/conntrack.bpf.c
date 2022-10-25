@@ -31,8 +31,8 @@
 
 int my_pid = 0;
 
-SEC("xdp_conntrack")
-int xdp_upf(struct xdp_md *ctx) {
+SEC("xdp")
+int xdp_conntrack_prog(struct xdp_md *ctx) {
     int rc;
     struct packetHeaders pkt;
 
@@ -49,7 +49,7 @@ int xdp_upf(struct xdp_md *ctx) {
     bpf_log_debug("Packet parsed, now starting the conntrack.\n");
 
     struct ct_k key;
-	__builtin_memset(&key, 0, sizeof(key));
+    __builtin_memset(&key, 0, sizeof(key));
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
 
@@ -80,12 +80,12 @@ int xdp_upf(struct xdp_md *ctx) {
     }
 
     struct ct_v newEntry;
-	__builtin_memset(&newEntry, 0, sizeof(newEntry));
+    __builtin_memset(&newEntry, 0, sizeof(newEntry));
     struct ct_v *value;
 
     uint64_t timestamp;
     // timestamp = bpf_ktime_get_boot_ns();
-	timestamp = bpf_ktime_get_ns();
+    timestamp = bpf_ktime_get_ns();
 
     /* == TCP  == */
     if (pkt.l4proto == IPPROTO_TCP) {
@@ -111,8 +111,7 @@ int xdp_upf(struct xdp_md *ctx) {
             // Found in forward direction
             if (value->state == SYN_SENT) {
                 // Still haven't received a SYN,ACK To the SYN
-                if ((pkt.flags & TCPHDR_SYN) != 0 &&
-                    (pkt.flags | TCPHDR_SYN) == TCPHDR_SYN) {
+                if ((pkt.flags & TCPHDR_SYN) != 0 && (pkt.flags | TCPHDR_SYN) == TCPHDR_SYN) {
                     // Another SYN. It is valid, probably a retransmission.
                     value->ttl = timestamp + TCP_SYN_SENT;
 
@@ -124,29 +123,26 @@ int xdp_upf(struct xdp_md *ctx) {
                     pkt.connStatus = INVALID;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "SYN_SENT state. Flags: %x",
-                        pkt.flags);
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                                  "check in "
+                                  "SYN_SENT state. Flags: %x",
+                                  pkt.flags);
                     goto PASS_ACTION;
                 }
             }
 
             if (value->state == SYN_RECV) {
                 // Expecting an ACK here
-                if ((pkt.flags & TCPHDR_ACK) != 0 &&
-                    (pkt.flags | TCPHDR_ACK) == TCPHDR_ACK &&
+                if ((pkt.flags & TCPHDR_ACK) != 0 && (pkt.flags | TCPHDR_ACK) == TCPHDR_ACK &&
                     (pkt.ackN == value->sequence)) {
                     // Valid ACK to the SYN, ACK
                     value->state = ESTABLISHED;
                     value->ttl = timestamp + TCP_ESTABLISHED;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Changing "
-                        "state from "
-                        "SYN_RECV to ESTABLISHED");
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                                  "state from "
+                                  "SYN_RECV to ESTABLISHED");
 
                     goto PASS_ACTION;
                 } else {
@@ -155,11 +151,10 @@ int xdp_upf(struct xdp_md *ctx) {
 
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "SYN_RECV state. Flags: %x",
-                        pkt.flags);
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                                  "check in "
+                                  "SYN_RECV state. Flags: %x",
+                                  pkt.flags);
                     goto PASS_ACTION;
                 }
             }
@@ -173,11 +168,10 @@ int xdp_upf(struct xdp_md *ctx) {
                     value->sequence = pkt.ackN;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Changing "
-                        "state from "
-                        "ESTABLISHED to FIN_WAIT_1. Seq: %u",
-                        value->sequence);
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                                  "state from "
+                                  "ESTABLISHED to FIN_WAIT_1. Seq: %u",
+                                  value->sequence);
 
                     goto PASS_ACTION;
                 } else {
@@ -190,27 +184,24 @@ int xdp_upf(struct xdp_md *ctx) {
             if (value->state == FIN_WAIT_1) {
                 // Received FIN in reverse direction, waiting for ack from this
                 // side
-                if ((pkt.flags & TCPHDR_ACK) != 0 &&
-                    (pkt.seqN == value->sequence)) {
+                if ((pkt.flags & TCPHDR_ACK) != 0 && (pkt.seqN == value->sequence)) {
                     // Received ACK
                     value->state = FIN_WAIT_2;
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to FIN_WAIT_2");
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                                  "state from "
+                                  "FIN_WAIT_1 to FIN_WAIT_2");
                     ctr_spin_lock(&value->lock);
                 } else {
                     // Validation failed, either ACK is not the only flag set or
                     // the ack number is wrong
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "FIN_WAIT_1 state. Flags: %x. AckSeq: %u",
-                        pkt.flags, pkt.ackN);
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                                  "check in "
+                                  "FIN_WAIT_1 state. Flags: %x. AckSeq: %u",
+                                  pkt.flags, pkt.ackN);
                     goto PASS_ACTION;
                 }
             }
@@ -225,38 +216,34 @@ int xdp_upf(struct xdp_md *ctx) {
                     value->sequence = pkt.ackN;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_2 to LAST_ACK");
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                                  "state from "
+                                  "FIN_WAIT_2 to LAST_ACK");
 
                     goto PASS_ACTION;
                 } else {
                     // Still receiving packets
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Failed FIN "
-                        "check in "
-                        "FIN_WAIT_2 state. Flags: %x. Seq: %u",
-                        pkt.flags, value->sequence);
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed FIN "
+                                  "check in "
+                                  "FIN_WAIT_2 state. Flags: %x. Seq: %u",
+                                  pkt.flags, value->sequence);
 
                     goto PASS_ACTION;
                 }
             }
 
             if (value->state == LAST_ACK) {
-                if ((pkt.flags & TCPHDR_ACK && pkt.seqN == value->sequence) !=
-                    0) {
+                if ((pkt.flags & TCPHDR_ACK && pkt.seqN == value->sequence) != 0) {
                     // Ack to the last FIN.
                     value->state = TIME_WAIT;
                     value->ttl = timestamp + TCP_LAST_ACK;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [FW_DIRECTION] Changing "
-                        "state from "
-                        "LAST_ACK to TIME_WAIT");
+                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                                  "state from "
+                                  "LAST_ACK to TIME_WAIT");
                     goto PASS_ACTION;
                 }
                 // Still receiving packets
@@ -277,10 +264,9 @@ int xdp_upf(struct xdp_md *ctx) {
             }
 
             ctr_spin_unlock(&value->lock);
-            bpf_log_debug(
-                "[ConntrackTableUpdate] [FW_DIRECTION] Should not get here. "
-                "Flags: %x. State: %d. ",
-                pkt.flags, value->state);
+            bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Should not get here. "
+                          "Flags: %x. State: %d. ",
+                          pkt.flags, value->state);
             goto PASS_ACTION;
 
         TCP_REVERSE:;
@@ -288,19 +274,16 @@ int xdp_upf(struct xdp_md *ctx) {
             // Found in reverse direction
             if (value->state == SYN_SENT) {
                 // This should be a SYN, ACK answer
-                if ((pkt.flags & TCPHDR_ACK) != 0 &&
-                    (pkt.flags & TCPHDR_SYN) != 0 &&
-                    (pkt.flags | (TCPHDR_SYN | TCPHDR_ACK)) ==
-                        (TCPHDR_SYN | TCPHDR_ACK) &&
+                if ((pkt.flags & TCPHDR_ACK) != 0 && (pkt.flags & TCPHDR_SYN) != 0 &&
+                    (pkt.flags | (TCPHDR_SYN | TCPHDR_ACK)) == (TCPHDR_SYN | TCPHDR_ACK) &&
                     pkt.ackN == value->sequence) {
                     value->state = SYN_RECV;
                     value->ttl = timestamp + TCP_SYN_RECV;
                     value->sequence = pkt.seqN + HEX_BE_ONE;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Changing "
-                        "state from "
-                        "SYN_SENT to SYN_RECV");
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                                  "state from "
+                                  "SYN_SENT to SYN_RECV");
 
                     goto PASS_ACTION;
                 }
@@ -314,10 +297,8 @@ int xdp_upf(struct xdp_md *ctx) {
             if (value->state == SYN_RECV) {
                 // The only acceptable packet in SYN_RECV here is a SYN,ACK
                 // retransmission
-                if ((pkt.flags & TCPHDR_ACK) != 0 &&
-                    (pkt.flags & TCPHDR_SYN) != 0 &&
-                    (pkt.flags | (TCPHDR_SYN | TCPHDR_ACK)) ==
-                        (TCPHDR_SYN | TCPHDR_ACK) &&
+                if ((pkt.flags & TCPHDR_ACK) != 0 && (pkt.flags & TCPHDR_SYN) != 0 &&
+                    (pkt.flags | (TCPHDR_SYN | TCPHDR_ACK)) == (TCPHDR_SYN | TCPHDR_ACK) &&
                     pkt.ackN == value->sequence) {
                     value->ttl = timestamp + TCP_SYN_RECV;
                     ctr_spin_unlock(&value->lock);
@@ -335,11 +316,10 @@ int xdp_upf(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     value->sequence = pkt.ackN;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Changing "
-                        "state from "
-                        "ESTABLISHED to FIN_WAIT_1. Seq: %x",
-                        value->sequence);
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                                  "state from "
+                                  "ESTABLISHED to FIN_WAIT_1. Seq: %x",
+                                  value->sequence);
 
                     goto PASS_ACTION;
                 } else {
@@ -352,16 +332,14 @@ int xdp_upf(struct xdp_md *ctx) {
             if (value->state == FIN_WAIT_1) {
                 // Received FIN in reverse direction, waiting for ack from this
                 // side
-                if ((pkt.flags & TCPHDR_ACK) != 0 &&
-                    (pkt.seqN == value->sequence)) {
+                if ((pkt.flags & TCPHDR_ACK) != 0 && (pkt.seqN == value->sequence)) {
                     // Received ACK
                     value->state = FIN_WAIT_2;
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to FIN_WAIT_2");
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                                  "state from "
+                                  "FIN_WAIT_1 to FIN_WAIT_2");
                     ctr_spin_lock(&value->lock);
 
                     // Don't forward packet, we can continue performing the
@@ -372,11 +350,10 @@ int xdp_upf(struct xdp_md *ctx) {
                     // the ack number is wrong
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Failed ACK "
-                        "check in "
-                        "FIN_WAIT_1 state. Flags: %d. AckSeq: %d",
-                        pkt.flags, pkt.ackN);
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Failed ACK "
+                                  "check in "
+                                  "FIN_WAIT_1 state. Flags: %d. AckSeq: %d",
+                                  pkt.flags, pkt.ackN);
                     goto PASS_ACTION;
                 }
             }
@@ -390,38 +367,34 @@ int xdp_upf(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_LAST_ACK;
                     value->sequence = pkt.ackN;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to LAST_ACK");
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                                  "state from "
+                                  "FIN_WAIT_1 to LAST_ACK");
 
                     goto PASS_ACTION;
                 } else {
                     // Still receiving packets
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Failed FIN "
-                        "check in "
-                        "FIN_WAIT_2 state. Flags: %d. Seq: %d",
-                        pkt.flags, value->sequence);
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Failed FIN "
+                                  "check in "
+                                  "FIN_WAIT_2 state. Flags: %d. Seq: %d",
+                                  pkt.flags, value->sequence);
 
                     goto PASS_ACTION;
                 }
             }
 
             if (value->state == LAST_ACK) {
-                if ((pkt.flags & TCPHDR_ACK && pkt.seqN == value->sequence) !=
-                    0) {
+                if ((pkt.flags & TCPHDR_ACK && pkt.seqN == value->sequence) != 0) {
                     // Ack to the last FIN.
                     value->state = TIME_WAIT;
                     value->ttl = timestamp + TCP_LAST_ACK;
                     ctr_spin_unlock(&value->lock);
 
-                    bpf_log_debug(
-                        "[ConntrackTableUpdate] [REV_DIRECTION] Changing "
-                        "state from "
-                        "LAST_ACK to TIME_WAIT");
+                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                                  "state from "
+                                  "LAST_ACK to TIME_WAIT");
 
                     goto PASS_ACTION;
                 }
@@ -443,19 +416,17 @@ int xdp_upf(struct xdp_md *ctx) {
             }
 
             ctr_spin_unlock(&value->lock);
-            bpf_log_debug(
-                "[ConntrackTableUpdate] [REV_DIRECTION] Should not get here. "
-                "Flags: %d. "
-                "State: %d. ",
-                pkt.flags, value->state);
+            bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Should not get here. "
+                          "Flags: %d. "
+                          "State: %d. ",
+                          pkt.flags, value->state);
             goto PASS_ACTION;
         }
 
     TCP_MISS:;
 
         // New entry. It has to be a SYN.
-        if ((pkt.flags & TCPHDR_SYN) != 0 &&
-            (pkt.flags | TCPHDR_SYN) == TCPHDR_SYN) {
+        if ((pkt.flags & TCPHDR_SYN) != 0 && (pkt.flags | TCPHDR_SYN) == TCPHDR_SYN) {
             newEntry.state = SYN_SENT;
             newEntry.ttl = timestamp + TCP_SYN_SENT;
             newEntry.sequence = pkt.seqN + HEX_BE_ONE;
@@ -467,8 +438,7 @@ int xdp_upf(struct xdp_md *ctx) {
             goto PASS_ACTION;
         } else {
             // Validation failed
-            bpf_log_debug("[ConntrackTableUpdate] Validation failed %d",
-                          pkt.flags);
+            bpf_log_debug("[ConntrackTableUpdate] Validation failed %d", pkt.flags);
             goto PASS_ACTION;
         }
     }
@@ -515,10 +485,9 @@ int xdp_upf(struct xdp_md *ctx) {
                 value->ttl = timestamp + UDP_NEW_TIMEOUT;
                 value->state = ESTABLISHED;
 
-                bpf_log_debug(
-                    "[ConntrackTableUpdate] [REV_DIRECTION] Changing state "
-                    "from "
-                    "NEW to ESTABLISHED");
+                bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing state "
+                              "from "
+                              "NEW to ESTABLISHED");
                 ctr_spin_unlock(&value->lock);
                 goto PASS_ACTION;
             } else {
@@ -577,18 +546,21 @@ PASS_ACTION:;
     struct ethhdr *eth = (struct ethhdr *)data;
     eth->h_proto = bpf_htons(ETH_P_IP);
 
-    __builtin_memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac,
-                     sizeof(eth->h_source));
-    __builtin_memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac,
-                     sizeof(eth->h_dest));
-    bpf_log_debug("Redirect pkt to IF2 iface with ifindex: %d\n",
-                  conntrack_cfg.if_index_if2);
+    __builtin_memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac, sizeof(eth->h_source));
+    __builtin_memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac, sizeof(eth->h_dest));
+    bpf_log_debug("Redirect pkt to IF2 iface with ifindex: %d\n", conntrack_cfg.if_index_if2);
 
     return bpf_redirect(conntrack_cfg.if_index_if2, 0);
 
 DROP:;
     bpf_log_debug("Dropping packet!\n");
     return XDP_DROP;
+}
+
+/* Redirect require an XDP bpf_prog loaded on the TX device */
+SEC("xdp")
+int xdp_redirect_dummy_prog(struct xdp_md *ctx) {
+    return XDP_PASS;
 }
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

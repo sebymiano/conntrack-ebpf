@@ -22,7 +22,8 @@ VMLINUX := ../vmlinux/$(ARCH)/vmlinux.h
 # Use our own libbpf API headers and Linux UAPI headers distributed with
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
-INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(OUTPUT)/libxdp/include -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
+# INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(OUTPUT)/libxdp/include -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
+INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
@@ -75,7 +76,13 @@ clean:
 	$(call msg,CLEAN)
 	$(Q)rm -rf $(OUTPUT) $(APPS)
 
-$(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT) $(LIBXDP_OUTPUT):
+clean-app:
+	$(call msg,CLEAN-APP)
+	$(Q)rm -rf $(APPS)
+	$(Q)rm -rf $(OUTPUT)/*.skel.h
+	$(Q)rm -rf $(OUTPUT)/*.o
+
+$(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
 
@@ -93,13 +100,14 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
 # Build libxdp
-$(LIBXDP_OBJ): $(BPFTOOL) $(LIBBPF_OBJ)| $(LIBXDP_OUTPUT)
-	$(call msg,LIBXDP,$@)
-	$(shell cd $(LIBXDP_SRC) && \
-			$(LIBXDP_SRC)/configure > /dev/null 2>&1 )
-	$(Q)$(MAKE) OBJDIR=$(LIBXDP_OUTPUT) DESTDIR=$(LIBXDP_OUTPUT) \
-				PREFIX= INCLUDEDIR= LIBDIR= UAPIDIR= \
-				-C $(LIBXDP_SRC) libxdp
+# $(LIBXDP_OBJ): $(BPFTOOL) $(LIBBPF_OBJ)| $(LIBXDP_OUTPUT)
+# 	$(call msg,LIBXDP,$@)
+# 	$(shell cd $(LIBXDP_SRC) && \
+# 			export PKG_CONFIG_PATH=$(LIBBPF_PKGCONFIG) && \
+# 			$(LIBXDP_SRC)/configure > /dev/null 2>&1 )
+# 	$(Q)$(MAKE) OBJDIR=$(LIBXDP_OUTPUT) DESTDIR=$(LIBXDP_OUTPUT) \
+# 				PREFIX= INCLUDEDIR= LIBDIR= UAPIDIR= \
+# 				-C $(LIBXDP_SRC) libxdp
 
 # Build bpftool
 $(LIBARGPARSE_OBJ):
@@ -125,7 +133,7 @@ $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBXDP_OBJ) $(LIBARGPARSE_OBJ) | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBARGPARSE_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
 

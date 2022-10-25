@@ -69,10 +69,9 @@ const volatile struct {
     __u8 if2_dst_mac[6];
 } conntrack_mac_cfg = {};
 
-#define ctr_spin_lock(...)                                                     \
-    (conntrack_cfg.enable_spin_locks <= 0 ? (0) : bpf_spin_lock(__VA_ARGS__))
+#define ctr_spin_lock(...) (conntrack_cfg.enable_spin_locks <= 0 ? (0) : bpf_spin_lock(__VA_ARGS__))
 
-#define ctr_spin_unlock(...)                                                   \
+#define ctr_spin_unlock(...)                                                                       \
     (conntrack_cfg.enable_spin_locks <= 0 ? (0) : bpf_spin_unlock(__VA_ARGS__))
 
 typedef __u8 __attribute__((__may_alias__)) __u8_alias_t;
@@ -80,8 +79,7 @@ typedef __u16 __attribute__((__may_alias__)) __u16_alias_t;
 typedef __u32 __attribute__((__may_alias__)) __u32_alias_t;
 typedef __u64 __attribute__((__may_alias__)) __u64_alias_t;
 
-static __always_inline void __read_once_size(const volatile void *p, void *res,
-                                             int size) {
+static __always_inline void __read_once_size(const volatile void *p, void *res, int size) {
     switch (size) {
     case 1:
         *(__u8_alias_t *)res = *(volatile __u8_alias_t *)p;
@@ -102,8 +100,7 @@ static __always_inline void __read_once_size(const volatile void *p, void *res,
     }
 }
 
-static __always_inline void __write_once_size(volatile void *p, void *res,
-                                              int size) {
+static __always_inline void __write_once_size(volatile void *p, void *res, int size) {
     switch (size) {
     case 1:
         *(volatile __u8_alias_t *)p = *(__u8_alias_t *)res;
@@ -124,24 +121,24 @@ static __always_inline void __write_once_size(volatile void *p, void *res,
     }
 }
 
-#define READ_ONCE(x)                                                           \
-    ({                                                                         \
-        union {                                                                \
-            typeof(x) __val;                                                   \
-            char __c[1];                                                       \
-        } __u = {.__c = {0}};                                                  \
-        __read_once_size(&(x), __u.__c, sizeof(x));                            \
-        __u.__val;                                                             \
+#define READ_ONCE(x)                                                                               \
+    ({                                                                                             \
+        union {                                                                                    \
+            typeof(x) __val;                                                                       \
+            char __c[1];                                                                           \
+        } __u = {.__c = {0}};                                                                      \
+        __read_once_size(&(x), __u.__c, sizeof(x));                                                \
+        __u.__val;                                                                                 \
     })
 
-#define WRITE_ONCE(x, val)                                                     \
-    ({                                                                         \
-        union {                                                                \
-            typeof(x) __val;                                                   \
-            char __c[1];                                                       \
-        } __u = {.__val = (val)};                                              \
-        __write_once_size(&(x), __u.__c, sizeof(x));                           \
-        __u.__val;                                                             \
+#define WRITE_ONCE(x, val)                                                                         \
+    ({                                                                                             \
+        union {                                                                                    \
+            typeof(x) __val;                                                                       \
+            char __c[1];                                                                           \
+        } __u = {.__val = (val)};                                                                  \
+        __write_once_size(&(x), __u.__c, sizeof(x));                                               \
+        __u.__val;                                                                                 \
     })
 
 #define NO_TEAR_ADD(x, val) WRITE_ONCE((x), READ_ONCE(x) + (val))
