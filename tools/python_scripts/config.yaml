@@ -2,8 +2,8 @@
  session_number: 1000
  server_ip_range: "10.10.1.0/24"
  client_ip_range: "10.10.2.0/24"
- server_mac: "00:00:0c:01:01:14"
- client_mac: "00:00:0c:01:01:11"
+ server_mac: "f8:f2:1e:b2:65:70"
+ client_mac: "f8:f2:1e:b2:43:00"
  server_port_start: 80
  server_port_end: 8080
  client_port_start: 9745
