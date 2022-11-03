@@ -1,0 +1,16 @@
+---
+ session_number: 1000
+ server_ip_range: "10.10.1.0/24"
+ client_ip_range: "10.10.2.0/24"
+ server_mac: "00:00:0c:01:01:14"
+ client_mac: "00:00:0c:01:01:11"
+ server_port_start: 80
+ server_port_end: 8080
+ client_port_start: 9745
+ client_port_end: 50214
+ rate_bps_start: 30000 #30kbps
+ rate_bps_end: 300000 #300kbps
+ packet_length_start: 64
+ packet_length_end: 64
+ duration_start: 1 # 30s
+ duration_end: 1 # 30s
