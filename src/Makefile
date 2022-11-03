@@ -15,6 +15,9 @@ LIBXDP_PKGCONFIG := $(abspath $(OUTPUT)/libxdp/lib/pkgconfig)
 LIBXDP_OBJ := $(abspath $(OUTPUT)/libxdp/libxdp.so)
 LIBXDP_OUTPUT := $(abspath $(OUTPUT)/libxdp)
 LIBARGPARSE_OBJ := $(abspath ../libargparse/libargparse.a)
+LIBLOG_OBJ := $(abspath $(OUTPUT)/liblog.o)
+LIBLOG_SRC := $(abspath ../liblog/src/log.c)
+LIBLOG_HDR := $(abspath ../liblog/src/)
 BPFTOOL_OUTPUT ?= $(abspath $(OUTPUT)/bpftool)
 BPFTOOL ?= $(BPFTOOL_OUTPUT)/bootstrap/bpftool
 ARCH := $(shell uname -m | sed 's/x86_64/x86/' | sed 's/aarch64/arm64/' | sed 's/ppc64le/powerpc/' | sed 's/mips.*/mips/')
@@ -23,8 +26,8 @@ VMLINUX := ../vmlinux/$(ARCH)/vmlinux.h
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
 # INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(OUTPUT)/libxdp/include -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
-INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
-CFLAGS := -g -Wall
+INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX)) -I$(LIBLOG_HDR)
+CFLAGS := -g -Wall -DLOG_USE_COLOR
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 APPS = conntrack
@@ -114,6 +117,11 @@ $(LIBARGPARSE_OBJ):
 	$(call msg,LIBARGPARSE,$@)
 	$(Q)$(MAKE) -C $(LIBARGPARSE_SRC)
 
+# Build liblog
+$(LIBLOG_OBJ):
+	$(call msg,LIBLOG,$@)
+	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(LIBLOG_SRC) -o $@
+
 # Build BPF code
 $(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT)
 	$(call msg,BPF,$@)
@@ -133,7 +141,7 @@ $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
 # Build application binary
-$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBARGPARSE_OBJ) | $(OUTPUT)
+$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) $(LIBARGPARSE_OBJ) $(LIBLOG_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
 

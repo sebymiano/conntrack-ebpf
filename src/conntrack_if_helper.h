@@ -41,16 +41,19 @@ void nbo_uint_to_mac_string(uint64_t mac, char mac_str[32]) {
     sprintf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", a[0], a[1], a[2], a[3], a[4], a[5]);
 }
 
-int mac_str_to_byte_array(unsigned int bytes[6], char *mac_str) {
-    if (sscanf(mac_str, "%02x:%02x:%02x:%02x:%02x:%02x", &bytes[0], &bytes[1], &bytes[2], &bytes[3],
+int mac_str_to_byte_array(unsigned char out[6], char *in) {
+    unsigned char bytes[6];
+    printf("Input string is: %s\n", in);
+    if (sscanf(in, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &bytes[0], &bytes[1], &bytes[2], &bytes[3],
                &bytes[4], &bytes[5]) != 6) {
-        printf("%s is an invalid MAC address", mac_str);
+        printf("%s is an invalid MAC address", in);
         return -1;
     }
+    memcpy(out, bytes, 6);
     return 0;
 }
 
-int get_mac_from_iface_name(const char *iface, char mac_str[32]) {
+int get_mac_from_iface_name(const char *iface, unsigned char mac_str[6]) {
     struct ifreq ifr;
     int fd, rv;
 
@@ -75,9 +78,9 @@ int get_mac_from_iface_name(const char *iface, char mac_str[32]) {
     }
     close(fd);
 
-    uint64_t mac_;
-    memcpy(&mac_, mac_str, sizeof(mac_));
-    nbo_uint_to_mac_string(mac_, mac_str);
+    // uint64_t mac_;
+    // memcpy(&mac_, mac_str, sizeof(mac_));
+    // nbo_uint_to_mac_string(mac_, mac_str);
     return 0;
 }
 

@@ -65,9 +65,9 @@ struct ct_v {
 };
 
 struct pkt_md {
-    uint32_t cnt;
+    uint64_t cnt;
     uint64_t bytes_cnt;
-};
+} __attribute__((packed));
 
 struct icmphdr {
     u_int8_t type; /* message type */

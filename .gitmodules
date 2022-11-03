@@ -7,3 +7,6 @@
 [submodule "libargparse"]
 	path = libargparse
 	url = https://github.com/cofyc/argparse.git
+[submodule "liblog"]
+	path = liblog
+	url = https://github.com/rxi/log.c.git

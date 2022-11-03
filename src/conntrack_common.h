@@ -63,10 +63,10 @@ const volatile struct {
 } conntrack_cfg = {};
 
 const volatile struct {
-    __u8 if1_src_mac[6];
-    __u8 if1_dst_mac[6];
-    __u8 if2_src_mac[6];
-    __u8 if2_dst_mac[6];
+    unsigned char if1_src_mac[6];
+    unsigned char if1_dst_mac[6];
+    unsigned char if2_src_mac[6];
+    unsigned char if2_dst_mac[6];
 } conntrack_mac_cfg = {};
 
 #define ctr_spin_lock(...) (conntrack_cfg.enable_spin_locks <= 0 ? (0) : bpf_spin_lock(__VA_ARGS__))

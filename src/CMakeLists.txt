@@ -54,6 +54,19 @@ ExternalProject_Add(libargparse
   STEP_TARGETS build
 )
 
+ExternalProject_Add(liblog
+  PREFIX liblog
+  SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../liblog
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ${CMAKE_C_COMPILER} 
+    -DLOG_USE_COLOR
+    -c ${CMAKE_CURRENT_SOURCE_DIR}/../liblog/src/log.c 
+    -o ${CMAKE_CURRENT_BINARY_DIR}/liblog.o
+  BUILD_IN_SOURCE TRUE
+  INSTALL_COMMAND ""
+  STEP_TARGETS build
+)
+
 # Set BpfObject input parameters -- note this is usually not necessary unless
 # you're in a highly vendored environment (like libbpf-bootstrap)
 set(BPFOBJECT_BPFTOOL_EXE ${CMAKE_CURRENT_BINARY_DIR}/bpftool/bootstrap/bpftool)
@@ -62,6 +75,8 @@ set(LIBBPF_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/libbpf)
 set(LIBBPF_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libbpf/libbpf.a)
 set(LIBARGPARSE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../libargparse)
 set(LIBARGPARSE_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libargparse/libargparse.a)
+set(LIBLOG_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../liblog/src)
+set(LIBLOG_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/liblog.o)
 
 find_package(BpfObject REQUIRED)
 
@@ -72,9 +87,9 @@ foreach(app ${apps})
   # include_directories(${LIBARGPARSE_INCLUDE_DIRS} ${LIBBPF_INCLUDE_DIRS})
   # Build object skeleton and depend skeleton on libbpf build
   bpf_object(${app_stem} ${app_stem}.bpf.c)
-  add_dependencies(${app_stem}_skel libbpf-build bpftool-build libargparse-build)
+  add_dependencies(${app_stem}_skel libbpf-build bpftool-build libargparse-build liblog-build)
 
   add_executable(${app_stem} ${app_stem}.c)
-  target_include_directories(${app_stem} PRIVATE ${LIBARGPARSE_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
-  target_link_libraries(${app_stem} ${app_stem}_skel ${LIBARGPARSE_LIBRARIES} ${NL3_LIBRARIES})
+  target_include_directories(${app_stem} PRIVATE ${LIBARGPARSE_INCLUDE_DIRS} ${LIBLOG_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
+  target_link_libraries(${app_stem} ${app_stem}_skel ${LIBARGPARSE_LIBRARIES} ${LIBLOG_LIBRARIES} ${NL3_LIBRARIES})
 endforeach()
