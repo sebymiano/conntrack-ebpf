@@ -530,6 +530,7 @@ PASS_ACTION:;
     NO_TEAR_ADD(md->bytes_cnt, pkt_len);
 
     if (conntrack_cfg.if_index_if2 == 0) {
+        bpf_log_err("Redirection is disabled\n");
         goto DROP;
     }
 
