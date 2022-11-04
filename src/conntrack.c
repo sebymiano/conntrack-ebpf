@@ -23,7 +23,6 @@ static __u32 xdp_flags = 0;
 static int ifindex_if1 = 0;
 static int ifindex_if2 = 0;
 static int connections_map_fd = 0;
-static int log_level = 0;
 
 static const char *const usages[] = {
     "conntrack [options] [[--] args]",
@@ -93,11 +92,14 @@ int main(int argc, const char **argv) {
     struct conntrack_bpf *skel;
     int err;
     int use_spinlocks = 0;
+    int enable_promiscuous = 0;
     const char *if1 = NULL;
     const char *if2 = NULL;
     int metadata_map_fd;
     int duration = -1;
-    // int interval = 10;
+
+    // Disabled by default
+    int log_level = 0;
 
     unsigned char if1_mac[6];
     unsigned char if2_mac[6];
@@ -107,6 +109,7 @@ int main(int argc, const char **argv) {
         OPT_HELP(),
         OPT_GROUP("Basic options"),
         OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Use spin locks", NULL, 0, 0),
+        OPT_BOOLEAN('p', "promiscuous", &enable_promiscuous, "Enable promiscuous mode on all interfaces", NULL, 0, 0),
         OPT_STRING('1', "iface1", &if1, "Interface to receive packet from", NULL, 0, 0),
         OPT_STRING('2', "iface2", &if2, "Interface to redirect packet to", NULL, 0, 0),
         // OPT_STRING('o', "output", &output, "Dump content of connections map
@@ -127,6 +130,18 @@ int main(int argc, const char **argv) {
                       "\nIf 'iface2' argument is specified, packets are redirected to that "
                       "interface instead of dropping them.");
     argc = argparse_parse(&argparse, argc, argv);
+
+    if (use_spinlocks) {
+        log_trace("Spinlocks are ENABLED");
+    } else {
+        log_trace("Spinlocks are DISABLED");
+    }
+
+    if (enable_promiscuous) {
+        log_trace("Promiscuous mode is ENABLED");
+    } else {
+        log_trace("Promiscuous mode is DISABLED");
+    }
 
     if (if1 != NULL) {
         log_info("XDP program will be attached to %s interface", if1);
@@ -231,6 +246,11 @@ int main(int argc, const char **argv) {
     xdp_flags = 0;
     xdp_flags |= XDP_FLAGS_DRV_MODE;
     set_iface_up(if1);
+
+    if (enable_promiscuous) {
+        enable_promisc(if1);
+    }
+
     err = bpf_xdp_attach(ifindex_if1, bpf_program__fd(skel->progs.xdp_conntrack_prog), xdp_flags,
                          NULL);
     if (err) {
@@ -242,6 +262,9 @@ int main(int argc, const char **argv) {
         xdp_flags = 0;
         xdp_flags |= XDP_FLAGS_DRV_MODE;
         set_iface_up(if2);
+        if (enable_promiscuous) {
+            enable_promisc(if2);
+        }
         err = bpf_xdp_attach(ifindex_if2, bpf_program__fd(skel->progs.xdp_redirect_dummy_prog),
                              xdp_flags, NULL);
         if (err) {

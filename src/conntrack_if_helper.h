@@ -103,4 +103,24 @@ int set_iface_up(const char *ifname) {
     return rv;
 }
 
+int enable_promisc(const char *ifname) {
+    struct ifreq ifr;
+    int sockfd, rv;
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        printf("enable_promisc error opening socket: %s\n", strerror(errno));
+        return -1;
+    }
+
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+    ioctl(sockfd, SIOCGIFFLAGS, &ifr);
+    ifr.ifr_flags |= IFF_PROMISC;
+    
+    rv = ioctl(sockfd, SIOCSIFFLAGS, &ifr); 
+    return rv;
+}
+
 #endif // CONNTRACK_IF_HELPERS_H_
