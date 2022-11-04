@@ -123,9 +123,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     pkt.connStatus = INVALID;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                    bpf_log_debug("[FW_DIRECTION] Failed ACK "
                                   "check in "
-                                  "SYN_SENT state. Flags: %x",
+                                  "SYN_SENT state. Flags: %x\n",
                                   pkt.flags);
                     goto PASS_ACTION;
                 }
@@ -140,9 +140,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_ESTABLISHED;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                    bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
-                                  "SYN_RECV to ESTABLISHED");
+                                  "SYN_RECV to ESTABLISHED\n");
 
                     goto PASS_ACTION;
                 } else {
@@ -151,15 +151,16 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                    bpf_log_debug("[FW_DIRECTION] Failed ACK "
                                   "check in "
-                                  "SYN_RECV state. Flags: %x",
+                                  "SYN_RECV state. Flags: %x\n",
                                   pkt.flags);
                     goto PASS_ACTION;
                 }
             }
 
             if (value->state == ESTABLISHED) {
+                bpf_log_debug("Connnection is ESTABLISHED\n");
                 if ((pkt.flags & TCPHDR_FIN) != 0) {
                     // Received first FIN from "original" direction.
                     // Changing state to FIN_WAIT_1
@@ -168,9 +169,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->sequence = pkt.ackN;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                    bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
-                                  "ESTABLISHED to FIN_WAIT_1. Seq: %u",
+                                  "ESTABLISHED to FIN_WAIT_1. Seq: %u\n",
                                   value->sequence);
 
                     goto PASS_ACTION;
@@ -189,18 +190,18 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->state = FIN_WAIT_2;
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                    bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
-                                  "FIN_WAIT_1 to FIN_WAIT_2");
+                                  "FIN_WAIT_1 to FIN_WAIT_2\n");
                     ctr_spin_lock(&value->lock);
                 } else {
                     // Validation failed, either ACK is not the only flag set or
                     // the ack number is wrong
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed ACK "
+                    bpf_log_debug("[FW_DIRECTION] Failed ACK "
                                   "check in "
-                                  "FIN_WAIT_1 state. Flags: %x. AckSeq: %u",
+                                  "FIN_WAIT_1 state. Flags: %x. AckSeq: %u\n",
                                   pkt.flags, pkt.ackN);
                     goto PASS_ACTION;
                 }
@@ -216,18 +217,18 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->sequence = pkt.ackN;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                    bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
-                                  "FIN_WAIT_2 to LAST_ACK");
+                                  "FIN_WAIT_2 to LAST_ACK\n");
 
                     goto PASS_ACTION;
                 } else {
                     // Still receiving packets
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Failed FIN "
+                    bpf_log_debug("[FW_DIRECTION] Failed FIN "
                                   "check in "
-                                  "FIN_WAIT_2 state. Flags: %x. Seq: %u",
+                                  "FIN_WAIT_2 state. Flags: %x. Seq: %u\n",
                                   pkt.flags, value->sequence);
 
                     goto PASS_ACTION;
@@ -241,9 +242,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_LAST_ACK;
 
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Changing "
+                    bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
-                                  "LAST_ACK to TIME_WAIT");
+                                  "LAST_ACK to TIME_WAIT\n");
                     goto PASS_ACTION;
                 }
                 // Still receiving packets
@@ -264,8 +265,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             ctr_spin_unlock(&value->lock);
-            bpf_log_debug("[ConntrackTableUpdate] [FW_DIRECTION] Should not get here. "
-                          "Flags: %x. State: %d. ",
+            bpf_log_debug("[FW_DIRECTION] Should not get here. "
+                          "Flags: %x. State: %d. \n",
                           pkt.flags, value->state);
             goto PASS_ACTION;
 
@@ -281,9 +282,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_SYN_RECV;
                     value->sequence = pkt.seqN + HEX_BE_ONE;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                    bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
-                                  "SYN_SENT to SYN_RECV");
+                                  "SYN_SENT to SYN_RECV\n");
 
                     goto PASS_ACTION;
                 }
@@ -310,15 +311,16 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             if (value->state == ESTABLISHED) {
+                bpf_log_debug("Connnection is ESTABLISHED\n");
                 if ((pkt.flags & TCPHDR_FIN) != 0) {
                     // Initiating closing sequence
                     value->state = FIN_WAIT_1;
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     value->sequence = pkt.ackN;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                    bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
-                                  "ESTABLISHED to FIN_WAIT_1. Seq: %x",
+                                  "ESTABLISHED to FIN_WAIT_1. Seq: %x\n",
                                   value->sequence);
 
                     goto PASS_ACTION;
@@ -337,9 +339,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->state = FIN_WAIT_2;
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                    bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
-                                  "FIN_WAIT_1 to FIN_WAIT_2");
+                                  "FIN_WAIT_1 to FIN_WAIT_2\n");
                     ctr_spin_lock(&value->lock);
 
                     // Don't forward packet, we can continue performing the
@@ -350,9 +352,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     // the ack number is wrong
                     pkt.connStatus = INVALID;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Failed ACK "
+                    bpf_log_debug("[REV_DIRECTION] Failed ACK "
                                   "check in "
-                                  "FIN_WAIT_1 state. Flags: %d. AckSeq: %d",
+                                  "FIN_WAIT_1 state. Flags: %d. AckSeq: %d\n",
                                   pkt.flags, pkt.ackN);
                     goto PASS_ACTION;
                 }
@@ -367,18 +369,18 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_LAST_ACK;
                     value->sequence = pkt.ackN;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                    bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
-                                  "FIN_WAIT_1 to LAST_ACK");
+                                  "FIN_WAIT_1 to LAST_ACK\n");
 
                     goto PASS_ACTION;
                 } else {
                     // Still receiving packets
                     value->ttl = timestamp + TCP_FIN_WAIT;
                     ctr_spin_unlock(&value->lock);
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Failed FIN "
+                    bpf_log_debug("[REV_DIRECTION] Failed FIN "
                                   "check in "
-                                  "FIN_WAIT_2 state. Flags: %d. Seq: %d",
+                                  "FIN_WAIT_2 state. Flags: %d. Seq: %d\n",
                                   pkt.flags, value->sequence);
 
                     goto PASS_ACTION;
@@ -392,9 +394,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     value->ttl = timestamp + TCP_LAST_ACK;
                     ctr_spin_unlock(&value->lock);
 
-                    bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing "
+                    bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
-                                  "LAST_ACK to TIME_WAIT");
+                                  "LAST_ACK to TIME_WAIT\n");
 
                     goto PASS_ACTION;
                 }
@@ -416,9 +418,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             ctr_spin_unlock(&value->lock);
-            bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Should not get here. "
+            bpf_log_debug("[REV_DIRECTION] Should not get here. "
                           "Flags: %d. "
-                          "State: %d. ",
+                          "State: %d. \n",
                           pkt.flags, value->state);
             goto PASS_ACTION;
         }
@@ -438,7 +440,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             goto PASS_ACTION;
         } else {
             // Validation failed
-            bpf_log_debug("[ConntrackTableUpdate] Validation failed %d", pkt.flags);
+            bpf_log_debug("Validation failed %d\n", pkt.flags);
             goto PASS_ACTION;
         }
     }
@@ -485,9 +487,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 value->ttl = timestamp + UDP_NEW_TIMEOUT;
                 value->state = ESTABLISHED;
 
-                bpf_log_debug("[ConntrackTableUpdate] [REV_DIRECTION] Changing state "
+                bpf_log_debug("[REV_DIRECTION] Changing state "
                               "from "
-                              "NEW to ESTABLISHED");
+                              "NEW to ESTABLISHED\n");
                 ctr_spin_unlock(&value->lock);
                 goto PASS_ACTION;
             } else {
@@ -539,7 +541,7 @@ PASS_ACTION:;
     data = (void *)(long)ctx->data;
 
     if (data + ETH_HLEN > data_end) {
-        bpf_log_err("Packet after modification is invalid! DROP");
+        bpf_log_err("Packet after modification is invalid! DROP\n");
         goto DROP;
     }
 
