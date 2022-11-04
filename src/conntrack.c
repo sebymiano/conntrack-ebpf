@@ -275,7 +275,7 @@ int main(int argc, const char **argv) {
 
     log_info("Successfully started!");
 
-    sleep(500);
+    sleep(1);
     poll_stats(metadata_map_fd, 1, duration);
 
 cleanup:
