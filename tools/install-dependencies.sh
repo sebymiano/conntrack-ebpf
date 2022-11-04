@@ -52,6 +52,7 @@ PACKAGES=""
 PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev zlibc libssl-dev libbfd-dev libpcap-dev libcap-dev"
 PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime g++-multilib"
 PACKAGES+=" pkg-config net-tools bash tcpreplay gnupg gnupg2 gpgv2 curl flex bison" # utility libraries
+PACKAGES+=" libnl-3-dev clang" 
 
 $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq $PACKAGES"
 
