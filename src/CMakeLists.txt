@@ -77,19 +77,20 @@ set(LIBARGPARSE_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../libargparse)
 set(LIBARGPARSE_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/libargparse/libargparse.a)
 set(LIBLOG_INCLUDE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}/../liblog/src)
 set(LIBLOG_LIBRARIES ${CMAKE_CURRENT_BINARY_DIR}/liblog.o)
-
+set(APP_HELPERS conntrack_if_helper.c)
 find_package(BpfObject REQUIRED)
 
+set(EBPF_DIR_NAME ebpf)
 # Create an executable for each application
-file(GLOB apps *.bpf.c)
+file(GLOB apps ${EBPF_DIR_NAME}/*.bpf.c)
 foreach(app ${apps})
   get_filename_component(app_stem ${app} NAME_WE)
   # include_directories(${LIBARGPARSE_INCLUDE_DIRS} ${LIBBPF_INCLUDE_DIRS})
   # Build object skeleton and depend skeleton on libbpf build
-  bpf_object(${app_stem} ${app_stem}.bpf.c)
+  bpf_object(${app_stem} ${EBPF_DIR_NAME}/${app_stem}.bpf.c)
   add_dependencies(${app_stem}_skel libbpf-build bpftool-build libargparse-build liblog-build)
 
-  add_executable(${app_stem} ${app_stem}.c)
+  add_executable(${app_stem} ${app_stem}.c ${APP_HELPERS})
   target_include_directories(${app_stem} PRIVATE ${LIBARGPARSE_INCLUDE_DIRS} ${LIBLOG_INCLUDE_DIRS} ${NL3_INCLUDE_DIRS})
   target_link_libraries(${app_stem} ${app_stem}_skel ${LIBARGPARSE_LIBRARIES} ${LIBLOG_LIBRARIES} ${NL3_LIBRARIES})
 endforeach()

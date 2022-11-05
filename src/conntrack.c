@@ -17,7 +17,7 @@
 
 #include "conntrack_if_helper.h"
 #include "conntrack.skel.h"
-#include "conntrack_structs.h"
+#include "ebpf/conntrack_structs.h"
 
 static __u32 xdp_flags = 0;
 static int ifindex_if1 = 0;
@@ -95,6 +95,7 @@ int main(int argc, const char **argv) {
     int enable_promiscuous = 0;
     const char *if1 = NULL;
     const char *if2 = NULL;
+    const char *if2_dst_mac = NULL;
     int metadata_map_fd;
     int duration = -1;
 
@@ -103,6 +104,7 @@ int main(int argc, const char **argv) {
 
     unsigned char if1_mac[6];
     unsigned char if2_mac[6];
+    unsigned char if2_dst_mac_byte[6];
     // const char *output = NULL;
 
     struct argparse_option options[] = {
@@ -112,8 +114,7 @@ int main(int argc, const char **argv) {
         OPT_BOOLEAN('p', "promiscuous", &enable_promiscuous, "Enable promiscuous mode on all interfaces", NULL, 0, 0),
         OPT_STRING('1', "iface1", &if1, "Interface to receive packet from", NULL, 0, 0),
         OPT_STRING('2', "iface2", &if2, "Interface to redirect packet to", NULL, 0, 0),
-        // OPT_STRING('o', "output", &output, "Dump content of connections map
-        // into output file", NULL, 0, 0),
+        OPT_STRING('m', "if2_dst_mac", &if2_dst_mac, "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
         // OPT_INTEGER('i', "interval", &interval, "Interval on which results
@@ -167,6 +168,18 @@ int main(int argc, const char **argv) {
     }
 
     if (if2 != NULL) {
+        if (if2_dst_mac == NULL) {
+            log_warn("Dst MAC not specified, I will generate a random MAC");
+            if (gen_random_mac(if2_dst_mac_byte) != 0) {
+                log_error("Unable to generate a random MAC. Exit");
+                exit(1);
+            }
+        } else {
+            if (mac_str_to_byte_array(if2_dst_mac_byte, if2_dst_mac) != 0) {
+                log_error("Wrong format of MAC address: %s", if2_dst_mac);
+                exit(1);
+            }
+        }
         log_debug("Redirect mode is enabled. Packets will be redirected to %s "
                "interface",
                if2);
@@ -208,10 +221,12 @@ int main(int argc, const char **argv) {
     skel->rodata->conntrack_cfg.if_index_if2 = ifindex_if2;
     skel->rodata->conntrack_cfg.enable_spin_locks = use_spinlocks;
 
-    memcpy(skel->rodata->conntrack_mac_cfg.if1_dst_mac, if1_mac, 6);
+    // This is not used
+    memcpy(skel->rodata->conntrack_mac_cfg.if1_src_mac, if1_mac, 6);
 
     if (ifindex_if2 != 0) {
-        memcpy(skel->rodata->conntrack_mac_cfg.if2_dst_mac, if2_mac, 6);
+        memcpy(skel->rodata->conntrack_mac_cfg.if2_src_mac, if2_mac, 6);
+        memcpy(skel->rodata->conntrack_mac_cfg.if2_dst_mac, if2_dst_mac_byte, 6);
     }
 
     bpf_program__set_type(skel->progs.xdp_conntrack_prog, BPF_PROG_TYPE_XDP);
