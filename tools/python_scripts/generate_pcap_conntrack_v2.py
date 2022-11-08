@@ -77,7 +77,7 @@ widgets = [Percentage(),
            ' ', ETA(),
            ' ', AdaptiveETA()]
 
-class FlowKey(ctypes.BigEndianStructure):
+class FlowKey(ctypes.Structure):
     """ creates a struct to match pkt_5tuple """
     _pack_ = 1
     _fields_ = [('src_ip', ctypes.c_uint32),
@@ -94,13 +94,40 @@ class FlowKey(ctypes.BigEndianStructure):
         str += f"Proto: {self.proto}\n"
         return str
 
-class FlowInfo(ctypes.BigEndianStructure):
-    """ creates a struct to match pkt_5tuple """
+    def __bytes__(self):
+        flow_bytes = b''
+        flow_bytes += self.src_ip.to_bytes(4, 'big')
+        flow_bytes += self.dst_ip.to_bytes(4, 'big')
+        flow_bytes += self.src_port.to_bytes(2, 'big')
+        flow_bytes += self.dst_port.to_bytes(2, 'big')
+        flow_bytes += self.proto.to_bytes(1, 'big')
+        return flow_bytes
+
+
+class FlowInfo(ctypes.Structure):
     _pack_ = 1
     _fields_ = [('flags', ctypes.c_uint8),
                 ('seqN', ctypes.c_uint32),
                 ('ackN', ctypes.c_uint32),
                 ('timestamp', ctypes.c_uint64)]
+
+    def __bytes__(self):
+        info_bytes = b''
+        info_bytes += self.flags.to_bytes(1, 'big')
+        info_bytes += self.seqN.to_bytes(4, 'big')
+        info_bytes += self.ackN.to_bytes(4, 'big')
+        info_bytes += self.timestamp.to_bytes(8, 'big')
+        return info_bytes
+
+class MetadataElem(ctypes.Structure):
+    _fields_ = [('flow', FlowKey),
+                ('info', FlowInfo)]
+
+    def __bytes__(self):
+        md_bytes = b''
+        md_bytes += bytes(self.flow)
+        md_bytes += bytes(self.info)
+        return md_bytes
 
 CONFIG_file_default = f"{sys.path[0]}/config.yaml"
 
@@ -375,6 +402,16 @@ def random_ip(network):
     ip_address = ipaddress.IPv4Address(network_int + rand_host_int) # combine the parts 
     return ip_address.exploded
 
+def ip2int(addr):
+    return struct.unpack("!I", socket.inet_aton(addr))[0]
+
+def int2ip(addr):
+    return socket.inet_ntoa(struct.pack("!I", addr))
+
+def ip_proto(pkt):
+    proto_field = pkt.get_field('proto')
+    return proto_field.i2s[pkt.proto]
+
 def main():
 
     desc = """Generate pcap file for one or more TCP/IPv4 streams.
@@ -465,12 +502,17 @@ are coded in the script file itself."""
     pcap = PcapWriter(args.out, append = True, sync = False)
 
     rendered = 0
+
+    all_pkts = list()
     
     # Sorting the keys of the 'all' dictionary gives us the packets in
     # the correct chronological order.
+    count = 0
+    pbar = ProgressBar(widgets=widgets, maxval=total_packets).start()
     for key in sorted(all):
         for (pkt, ts) in all[key]:
-
+            count += 1
+            pbar.update(count)
             # Make a scapy packet with the available packet
             # information.
             scapy_pkt = Ether(dst = pkt['EtherDst'], src = pkt['EtherSrc'])/ \
@@ -487,19 +529,68 @@ are coded in the script file itself."""
 
             # Write the scapy packet to the pcap
             scapy_pkt.time = ts
-            pcap.write(scapy_pkt)
+
+            all_pkts.append(copy.deepcopy(scapy_pkt))
+            # pcap.write(scapy_pkt)
 
             # Report progress to the impatient user
-            rendered = rendered + 1
-            percent = 0
-            if (rendered % 1000) == 0:
-                percent = int((rendered * 100.0)/total_packets)
-                print('Wrote {} ({}%) of {} packets'.
-                      format(rendered, percent, total_packets),
-                      flush = True, end = '\r')
-                
-    print('Finished writing {} packets                 '.format(total_packets),
-          flush = True)
+            # rendered = rendered + 1
+            # percent = 0
+            # if (rendered % 1000) == 0:
+            #     percent = int((rendered * 100.0)/total_packets)
+            #     print('Created {} ({}%) of {} packets'.
+            #           format(rendered, percent, total_packets),
+            #           flush = True, end = '\r')
+
+    tot_steps = len(all_pkts)
+    count = 0
+    pbar = ProgressBar(widgets=widgets, maxval=tot_steps).start()
+    for i, curr_pkt in enumerate(all_pkts):
+        count += 1
+        pbar.update(count)
+        md_elem_bytes = b''
+        payload = b''
+        for n in range(1, num_cores + 1):
+            flow_key = FlowKey()
+            flow_info = FlowInfo()
+            prev_index = i - n
+            if (i == 0 and n == 0) or (prev_index < 0):
+                flow_key.protocol = 0
+            else:
+                pkt = all_pkts[prev_index]
+                # We need to construct the previous flow information
+                proto_field = pkt.getlayer(IP).proto
+                flow_key.src_ip = ctypes.c_uint32(ip2int(pkt.getlayer(IP).src))
+                flow_key.dst_ip = ctypes.c_uint32(ip2int(pkt.getlayer(IP).dst))
+                flow_key.protocol = ctypes.c_uint8(proto_field)
+                if pkt.haslayer(TCP):
+                    flow_key.src_port = ctypes.c_uint16(pkt.getlayer(TCP).sport)
+                    flow_key.dst_port = ctypes.c_uint16(pkt.getlayer(TCP).dport)
+                elif pkt.haslayer(UDP):
+                    flow_key.src_port = ctypes.c_uint16(pkt.getlayer(UDP).sport)
+                    flow_key.dst_port = ctypes.c_uint16(pkt.getlayer(UDP).dport)
+                else:
+                    print(f"Unsupported layer type: {proto_field} ({ip_proto(pkt.payload)}")
+                    sys.exit(1)
+
+                if pkt.haslayer(TCP):
+                    flow_info.flags = ctypes.c_uint8(int(pkt.getlayer(TCP).flags))
+                    flow_info.seqN = ctypes.c_uint32(pkt.getlayer(TCP).seq)
+                    flow_info.ackN = ctypes.c_uint32(pkt.getlayer(TCP).ack)
+                flow_info.timestamp = ctypes.c_uint64(int(pkt.time))
+
+            md_elem = MetadataElem()
+            md_elem.flow = flow_key
+            md_elem.info = flow_info
+
+            md_elem_bytes += bytes(md_elem)
+
+        payload = md_elem_bytes + bytes(curr_pkt[Raw].load)
+        curr_pkt[Raw].load = payload    
+
+        pcap.write(curr_pkt)
+    print("")
+    print('Finished writing {} packets'.format(total_packets), flush = True)
 #----------------------------------------------------------------------
 
 if __name__ == '__main__':

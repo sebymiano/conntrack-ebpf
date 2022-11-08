@@ -33,24 +33,24 @@
 int my_pid = 0;
 
 struct flow_key {
-  __u8 protocol;
   __u32 src_ip;
   __u32 dst_ip;
   __u16 src_port;
   __u16 dst_port;
-};
+  __u8 protocol;
+} __attribute__((packed));
 
 struct flow_info {
   __u8 flags;
   __u32 seqN;
   __u32 ackN;
   __u64 timestamp;
-};
+} __attribute__((packed));
 
 struct metadata_elem {
   struct flow_key flow;
   struct flow_info info;
-};
+} __attribute__((packed));
 
 
 SEC("xdp")
@@ -108,7 +108,12 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             pkt.seqN = md_elem->info.seqN;
             pkt.flags = md_elem->info.flags;
             timestamp = md_elem->info.timestamp;
+
+            // This is a trick to ensure the first N packets are skipped
+            if (pkt.l4proto == 0) goto PASS_ACTION;
         }
+
+        bpf_log_debug("Dealing with pkt: %i taken from the metadata.\n", i);
 
         struct ct_k key;
         __builtin_memset(&key, 0, sizeof(key));
