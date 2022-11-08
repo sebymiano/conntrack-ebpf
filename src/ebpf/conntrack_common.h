@@ -60,6 +60,7 @@ const volatile struct {
     __u32 if_index_if1;
     __u32 if_index_if2;
     __u8 enable_spin_locks;
+    __u8 num_pkts;
 } conntrack_cfg = {};
 
 const volatile struct {

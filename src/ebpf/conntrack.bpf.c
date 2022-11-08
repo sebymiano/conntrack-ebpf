@@ -35,13 +35,14 @@ SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
     int rc;
     struct packetHeaders pkt;
+    __u16 nh_off;
 
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
 
     bpf_log_debug("Received packet on interface.\n");
 
-    rc = parse_packet(data, data_end, &pkt);
+    rc = parse_packet(data, data_end, &pkt, &nh_off);
 
     if (rc < 0)
         goto DROP;

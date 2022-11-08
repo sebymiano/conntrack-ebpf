@@ -71,12 +71,11 @@ static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h
     return true;
 }
 
-static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt) {
+static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt, __u16 *nh_off) {
     __u16 l3_proto;
-    __u16 nh_off;
     struct iphdr *iph;
 
-    if (!validate_ethertype(data, data_end, &l3_proto, &nh_off)) {
+    if (!validate_ethertype(data, data_end, &l3_proto, nh_off)) {
         bpf_log_warning("Unrecognized L3 protocol\n");
         goto DROP;
     }
@@ -94,11 +93,13 @@ static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHe
     }
 
 IP:;
-    iph = (struct iphdr *)(data + nh_off);
+    iph = (struct iphdr *)(data + *nh_off);
     if ((void *)iph + sizeof(*iph) > data_end) {
         bpf_log_err("Invalid IPv4 packet\n");
         goto DROP;
     }
+
+    *nh_off += sizeof(*iph);
 
     pkt->srcIp = iph->saddr;
     pkt->dstIp = iph->daddr;
@@ -109,6 +110,7 @@ IP:;
         tcp = (struct tcp_hdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
         if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*tcp) > data_end)
             goto DROP;
+        *nh_off += sizeof(*tcp);
         pkt->srcPort = tcp->source;
         pkt->dstPort = tcp->dest;
         pkt->seqN = tcp->seq;
@@ -119,6 +121,7 @@ IP:;
         udp = (struct udphdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
         if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*udp) > data_end)
             goto DROP;
+        *nh_off += sizeof(*udp);
         pkt->srcPort = udp->source;
         pkt->dstPort = udp->dest;
     } else {

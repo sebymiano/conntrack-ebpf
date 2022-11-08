@@ -30,7 +30,7 @@ INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(dir $(
 CFLAGS := -g -Wall -DLOG_USE_COLOR
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-APPS = conntrack
+APPS = conntrack conntrack_v2
 HELPERS_OBJ = conntrack_if_helper.o
 
 CONNTRACK_CONFIG_DEPS = libnl-3.0

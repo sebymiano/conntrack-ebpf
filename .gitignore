@@ -1,5 +1,6 @@
 src/.output
 src/build
 src/conntrack
+src/conntrack_v2
 src/compile_commands.json 
 .vscode/settings.json
