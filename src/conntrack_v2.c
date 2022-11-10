@@ -107,6 +107,8 @@ int main(int argc, const char **argv) {
     unsigned char if2_dst_mac_byte[6];
     // const char *output = NULL;
 
+    int num_cores = libbpf_num_possible_cpus();
+
     struct argparse_option options[] = {
         OPT_HELP(),
         OPT_GROUP("Basic options"),
@@ -117,6 +119,7 @@ int main(int argc, const char **argv) {
         OPT_STRING('m', "if2_dst_mac", &if2_dst_mac, "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
+        OPT_INTEGER('n', "num_cores", &num_cores, "# of cores to use (default is the # of core of the machine)", NULL, 0, 0),
         // OPT_INTEGER('i', "interval", &interval, "Interval on which results
         // will be saved into the output file", NULL, 0, 0),
         OPT_END(),
@@ -219,7 +222,8 @@ int main(int argc, const char **argv) {
     skel->rodata->conntrack_cfg.log_level = log_level;
     skel->rodata->conntrack_cfg.if_index_if1 = ifindex_if1;
     skel->rodata->conntrack_cfg.if_index_if2 = ifindex_if2;
-    skel->rodata->conntrack_cfg.enable_spin_locks = use_spinlocks;
+    skel->rodata->conntrack_cfg.enable_spin_locks = 0;
+    skel->rodata->conntrack_cfg.num_pkts = num_cores;
 
     // This is not used
     memcpy(skel->rodata->conntrack_mac_cfg.if1_src_mac, if1_mac, 6);

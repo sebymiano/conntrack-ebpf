@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "conntrack_common.h"
+
 typedef enum {
     NEW,
     ESTABLISHED,
@@ -54,15 +56,6 @@ struct ct_k {
     uint16_t srcPort;
     uint16_t dstPort;
 } __attribute__((packed));
-
-struct ct_v {
-    uint64_t ttl;
-    uint8_t state;
-    uint8_t ipRev;
-    uint8_t portRev;
-    uint32_t sequence;
-    struct bpf_spin_lock lock;
-};
 
 struct pkt_md {
     uint64_t cnt;

@@ -74,27 +74,29 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     bpf_log_debug("Packet parsed, now starting the conntrack.\n");
 
-    md_size = (conntrack_cfg.num_pkts - 1) * sizeof(struct metadata_elem);
+    md_size = (conntrack_cfg.num_pkts) * sizeof(struct metadata_elem);
     if (data + nh_off + md_size > data_end) {
         bpf_log_err("No metadata available in the current pkt\n");
         goto DROP;
     }
-
-    for (int i = 0; i < conntrack_cfg.num_pkts; i++) {
+    struct ct_k key;
+    uint8_t ipRev = 0;
+    uint8_t portRev = 0;
+    int ret;
+    for (int i = 0; i < conntrack_cfg.num_pkts + 1; i++) {
         uint64_t timestamp;
-        if (i == (conntrack_cfg.num_pkts - 1)) {
-            pkt.l4proto = curr_pkt.l4proto;
-            pkt.srcIp = curr_pkt.srcIp;
-            pkt.dstIp = curr_pkt.dstIp;
-            pkt.srcPort = curr_pkt.srcPort;
-            pkt.dstPort = curr_pkt.dstPort;
-
-            pkt.ackN = curr_pkt.ackN;
-            pkt.seqN = curr_pkt.seqN;
-            pkt.flags = curr_pkt.flags;
-
+        if (i == (conntrack_cfg.num_pkts)) {
+            ipRev = 0;
+            portRev = 0;
             timestamp = bpf_ktime_get_boot_ns();
-            // timestamp = bpf_ktime_get_ns();
+            bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", i);
+            ret = advance_tcp_state_machine(&key, &curr_pkt, &ipRev, &portRev, timestamp);
+            if (ret < 0) {
+                bpf_log_err("Received not TCP packet (id: %d)", i);
+                goto DROP;
+            }                 
+            // This is the last pkt
+            goto PASS_ACTION_FINAL;
         } else {
             md_elem = data + nh_off;
 
@@ -109,174 +111,22 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             pkt.flags = md_elem->info.flags;
             timestamp = md_elem->info.timestamp;
 
-            // This is a trick to ensure the first N packets are skipped
-            if (pkt.l4proto == 0) goto PASS_ACTION;
-        }
-
-        bpf_log_debug("Dealing with pkt: %i taken from the metadata.\n", i);
-
-        struct ct_k key;
-        __builtin_memset(&key, 0, sizeof(key));
-        uint8_t ipRev = 0;
-        uint8_t portRev = 0;
-
-        if (pkt.srcIp <= pkt.dstIp) {
-            key.srcIp = pkt.srcIp;
-            key.dstIp = pkt.dstIp;
             ipRev = 0;
-        } else {
-            key.srcIp = pkt.dstIp;
-            key.dstIp = pkt.srcIp;
-            ipRev = 1;
-        }
-
-        key.l4proto = pkt.l4proto;
-
-        if (pkt.srcPort < pkt.dstPort) {
-            key.srcPort = pkt.srcPort;
-            key.dstPort = pkt.dstPort;
             portRev = 0;
-        } else if (pkt.srcPort > pkt.dstPort) {
-            key.srcPort = pkt.dstPort;
-            key.dstPort = pkt.srcPort;
-            portRev = 1;
-        } else {
-            key.srcPort = pkt.srcPort;
-            key.dstPort = pkt.dstPort;
-            portRev = ipRev;
-        }
-
-        struct ct_v newEntry;
-        __builtin_memset(&newEntry, 0, sizeof(newEntry));
-        struct ct_v *value;
-
-        /* == TCP  == */
-        if (pkt.l4proto == IPPROTO_TCP) {
-            // If it is a RST, label it as established.
-            if ((pkt.flags & TCPHDR_RST) != 0) {
-                // connections.delete(&key);
-                goto PASS_ACTION;
-            }
-            value = bpf_map_lookup_elem(&connections, &key);
-            if (value != NULL) {
-                return_action_t action;
-                if ((value->ipRev == ipRev) && (value->portRev == portRev)) {
-                    goto TCP_FORWARD;
-                } else if ((value->ipRev != ipRev) && (value->portRev != portRev)) {
-                    goto TCP_REVERSE;
-                } else {
-                    
-                    goto TCP_MISS;
-                }
-
-            TCP_FORWARD:;
-                action = handle_tcp_conntrack_forward(&pkt, value, timestamp);
-                if (action == TCP_NEW) {
-                    goto TCP_MISS;
-                }
-                else {
-                    goto PASS_ACTION;
-                }
-                
-            TCP_REVERSE:;
-                action = handle_tcp_conntrack_reverse(&pkt, value, timestamp);
-                if (action == TCP_NEW) {
-                    goto TCP_MISS;
-                }
-                else {
-                    goto PASS_ACTION;
-                }
-                
-            }
-
-        TCP_MISS:;
-
-            // New entry. It has to be a SYN.
-            if ((pkt.flags & TCPHDR_SYN) != 0 && (pkt.flags | TCPHDR_SYN) == TCPHDR_SYN) {
-                newEntry.state = SYN_SENT;
-                newEntry.ttl = timestamp + TCP_SYN_SENT;
-                newEntry.sequence = pkt.seqN + HEX_BE_ONE;
-
-                newEntry.ipRev = ipRev;
-                newEntry.portRev = portRev;
-
-                bpf_map_update_elem(&connections, &key, &newEntry, BPF_ANY);
+            // This is a trick to ensure the first N packets are skipped
+            if (pkt.l4proto == 0) {
+                bpf_log_debug("Skip this packet (id: %d) since the info are 0ed\n", i);
                 goto PASS_ACTION;
             } else {
-                // Validation failed
-                bpf_log_debug("Validation failed %d\n", pkt.flags);
+                bpf_log_debug("Dealing with pkt: %i taken from the metadata.\n", i);
+                ret = advance_tcp_state_machine(&key, &pkt, &ipRev, &portRev, timestamp);
+                if (ret < 0) {
+                    bpf_log_err("Received not TCP packet (id: %d)", i);
+                    goto DROP;
+                }
                 goto PASS_ACTION;
             }
-        }
-
-        if (pkt.l4proto == IPPROTO_UDP) {
-            value = bpf_map_lookup_elem(&connections, &key);
-            if (value != NULL) {
-                
-                if ((value->ipRev == ipRev) && (value->portRev == portRev)) {
-                    goto UDP_FORWARD;
-                } else if ((value->ipRev != ipRev) && (value->portRev != portRev)) {
-                    goto UDP_REVERSE;
-                } else {
-                    
-                    goto UDP_MISS;
-                }
-
-            UDP_FORWARD:;
-
-                // Valid entry
-                if (value->state == NEW) {
-                    // An entry was already present with the NEW state. This means
-                    // that there has been no answer, from the other side.
-                    // Connection is still NEW.
-                    // For now I am refreshing the TTL, this can lead to an
-                    // DoS attack where the attacker prevents the entry from being
-                    // deleted by continuosly sending packets.
-                    value->ttl = timestamp + UDP_NEW_TIMEOUT;
-                    
-                    goto PASS_ACTION;
-                } else {
-                    // value->state == ESTABLISHED
-                    value->ttl = timestamp + UDP_ESTABLISHED_TIMEOUT;
-                    
-                    goto PASS_ACTION;
-                }
-
-            UDP_REVERSE:;
-
-                if (value->state == NEW) {
-                    // An entry was present in the rev direction with the NEW state.
-                    // This means that this is an answer, from the other side.
-                    // Connection is now ESTABLISHED.
-                    value->ttl = timestamp + UDP_NEW_TIMEOUT;
-                    value->state = ESTABLISHED;
-
-                    bpf_log_debug("[REV_DIRECTION] Changing state "
-                                "from "
-                                "NEW to ESTABLISHED\n");
-                    
-                    goto PASS_ACTION;
-                } else {
-                    // value->state == ESTABLISHED
-                    value->ttl = timestamp + UDP_ESTABLISHED_TIMEOUT;
-                    
-                    goto PASS_ACTION;
-                }
-            }
-
-        UDP_MISS:;
-
-            // No entry found in both directions. Create one.
-            newEntry.ttl = timestamp + UDP_NEW_TIMEOUT;
-            newEntry.state = NEW;
-            newEntry.sequence = 0;
-
-            newEntry.ipRev = ipRev;
-            newEntry.portRev = portRev;
-
-            bpf_map_update_elem(&connections, &key, &newEntry, BPF_ANY);
-            goto PASS_ACTION;
-        }
+        }        
 
 PASS_ACTION:;
         nh_off += sizeof(struct metadata_elem);

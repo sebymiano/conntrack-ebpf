@@ -27,6 +27,14 @@
 
 #define CONNTRACK_MAP_MAX_SIZE 65536
 
+struct ct_v {
+    uint64_t ttl;
+    uint8_t state;
+    uint8_t ipRev;
+    uint8_t portRev;
+    uint32_t sequence;
+};
+
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
     __type(key, struct ct_k);

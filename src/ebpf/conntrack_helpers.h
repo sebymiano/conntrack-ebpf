@@ -45,6 +45,34 @@ typedef enum return_action {
     TCP_NEW
 } return_action_t;
 
+static FORCE_INLINE void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt, uint8_t *ipRev, uint8_t *portRev) {
+    if (pkt->srcIp <= pkt->dstIp) {
+        key->srcIp = pkt->srcIp;
+        key->dstIp = pkt->dstIp;
+        *ipRev = 0;
+    } else {
+        key->srcIp = pkt->dstIp;
+        key->dstIp = pkt->srcIp;
+        *ipRev = 1;
+    }
+
+    key->l4proto = pkt->l4proto;
+
+    if (pkt->srcPort < pkt->dstPort) {
+        key->srcPort = pkt->srcPort;
+        key->dstPort = pkt->dstPort;
+        *portRev = 0;
+    } else if (pkt->srcPort > pkt->dstPort) {
+        key->srcPort = pkt->dstPort;
+        key->dstPort = pkt->srcPort;
+        *portRev = 1;
+    } else {
+        key->srcPort = pkt->srcPort;
+        key->dstPort = pkt->dstPort;
+        *portRev = *ipRev;
+    }
+}
+
 static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHeaders *pkt, struct ct_v *ct_value, uint64_t timestamp) {
     // Found in forward direction
     if (ct_value->state == SYN_SENT) {
@@ -351,6 +379,62 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
                 "State: %d. \n",
                 pkt->flags, ct_value->state);
     return PASS_ACTION;
+}
+
+static FORCE_INLINE int advance_tcp_state_machine(struct ct_k *key, struct packetHeaders *pkt, 
+                                                  uint8_t *ipRev, uint8_t *portRev, uint64_t timestamp) {
+    struct ct_v *value;
+    struct ct_v newEntry;
+
+    __builtin_memset(key, 0, sizeof(*key));
+
+    conntrack_get_key(key, pkt, ipRev, portRev);
+
+    /* == TCP  == */
+    if (pkt->l4proto == IPPROTO_TCP) {
+        // If it is a RST, label it as established.
+        if ((pkt->flags & TCPHDR_RST) != 0) {
+            // connections.delete(&key);
+            return PASS_ACTION;
+        }
+        value = bpf_map_lookup_elem(&connections, key);
+        if (value != NULL) {
+            return_action_t action;
+            if ((value->ipRev == *ipRev) && (value->portRev == *portRev)) {
+                action = handle_tcp_conntrack_forward(pkt, value, timestamp);
+                if (action == TCP_NEW) goto TCP_MISS;
+                else return PASS_ACTION;
+            } else if ((value->ipRev != *ipRev) && (value->portRev != *portRev)) {
+                action = handle_tcp_conntrack_reverse(pkt, value, timestamp);
+                if (action == TCP_NEW) goto TCP_MISS;
+                else return PASS_ACTION;
+            } else {
+                goto TCP_MISS;
+            }
+        }
+
+    TCP_MISS:;
+        __builtin_memset(&newEntry, 0, sizeof(newEntry));
+        // New entry. It has to be a SYN.
+        if ((pkt->flags & TCPHDR_SYN) != 0 && (pkt->flags | TCPHDR_SYN) == TCPHDR_SYN) {
+            newEntry.state = SYN_SENT;
+            newEntry.ttl = timestamp + TCP_SYN_SENT;
+            newEntry.sequence = pkt->seqN + HEX_BE_ONE;
+
+            newEntry.ipRev = *ipRev;
+            newEntry.portRev = *portRev;
+
+            bpf_map_update_elem(&connections, key, &newEntry, BPF_ANY);
+            return PASS_ACTION;
+        } else {
+            // Validation failed
+            bpf_log_debug("Validation failed %d\n", pkt->flags);
+            return PASS_ACTION;
+        }
+    }
+
+    // Not TCP packet
+    return -1;
 }
 
 #endif //CONNTRACK_HELPERS_H_
