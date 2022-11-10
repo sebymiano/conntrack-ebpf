@@ -19,6 +19,9 @@
 #include "conntrack_v2.skel.h"
 #include "ebpf/conntrack_structs.h"
 
+#define ONE_MILLION 1000000
+#define ONE_BILLION 1000000000
+
 static __u32 xdp_flags = 0;
 static int ifindex_if1 = 0;
 static int ifindex_if2 = 0;
@@ -75,10 +78,14 @@ static void poll_stats(int map_fd, int interval, int duration) {
             sum[0] += values[i].cnt;
             sum[1] += values[i].bytes_cnt;
         }
-        if (sum[0] > prev[0])
-            log_info("%10llu pkt/s", (sum[0] - prev[0]) / interval);
-        if (sum[1] > prev[1])
-            log_info("%10llu byte/s", (sum[1] - prev[1]) / interval);
+        if (sum[0] > prev[0]) {
+            float rate = (sum[0] - prev[0]) / interval;
+            log_info("%10llu pkt/s (%.2f Mpps)", (sum[0] - prev[0]) / interval, rate / ONE_MILLION);
+        }
+        if (sum[1] > prev[1]) {
+            float bit_rate = ((sum[1] - prev[1]) / interval)*8;
+            log_info("%10llu byte/s (%.2f Gbps)", (sum[1] - prev[1]) / interval, bit_rate / ONE_BILLION);
+        }
         prev[0] = sum[0];
         prev[1] = sum[1];
         tot_duration++;

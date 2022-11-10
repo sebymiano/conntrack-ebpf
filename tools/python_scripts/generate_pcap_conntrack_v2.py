@@ -555,20 +555,21 @@ are coded in the script file itself."""
             flow_info = FlowInfo()
             prev_index = i - n
             if (i == 0 and n == 0) or (prev_index < 0):
-                flow_key.protocol = 0
+                flow_key.proto = 0
             else:
                 pkt = all_pkts[prev_index]
                 # We need to construct the previous flow information
                 proto_field = pkt.getlayer(IP).proto
                 flow_key.src_ip = ctypes.c_uint32(ip2int(pkt.getlayer(IP).src))
                 flow_key.dst_ip = ctypes.c_uint32(ip2int(pkt.getlayer(IP).dst))
-                flow_key.protocol = ctypes.c_uint8(proto_field)
                 if pkt.haslayer(TCP):
                     flow_key.src_port = ctypes.c_uint16(pkt.getlayer(TCP).sport)
                     flow_key.dst_port = ctypes.c_uint16(pkt.getlayer(TCP).dport)
+                    flow_key.proto = ctypes.c_uint8(6)
                 elif pkt.haslayer(UDP):
                     flow_key.src_port = ctypes.c_uint16(pkt.getlayer(UDP).sport)
                     flow_key.dst_port = ctypes.c_uint16(pkt.getlayer(UDP).dport)
+                    flow_key.proto = ctypes.c_uint8(17)
                 else:
                     print(f"Unsupported layer type: {proto_field} ({ip_proto(pkt.payload)}")
                     sys.exit(1)

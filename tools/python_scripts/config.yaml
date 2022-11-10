@@ -1,5 +1,5 @@
 ---
- session_number: 1000
+ session_number: 10
  server_ip_range: "10.10.1.0/24"
  client_ip_range: "10.10.2.0/24"
  server_mac: "f8:f2:1e:b2:65:70"

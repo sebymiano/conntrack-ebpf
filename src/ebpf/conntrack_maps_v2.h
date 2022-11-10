@@ -36,7 +36,7 @@ struct ct_v {
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_LRU_PERCPU_HASH);
+    __uint(type, BPF_MAP_TYPE_PERCPU_HASH);
     __type(key, struct ct_k);
     __type(value, struct ct_v);
     __uint(max_entries, CONNTRACK_MAP_MAX_SIZE);
