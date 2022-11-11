@@ -6,7 +6,6 @@ import ipaddress, random, struct
 from progressbar import ProgressBar, Percentage, Bar, ETA, AdaptiveETA
 import sys
 import os
-sys.path.append(os.environ['TREX_PATH']+'/trex_client/interactive')
 
 from trex_stl_lib.api import *
 from scapy.contrib.gtp import *
