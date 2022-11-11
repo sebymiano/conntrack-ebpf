@@ -40,12 +40,10 @@
 #include "conntrack_common.h"
 #include "conntrack_bpf_log.h"
 
-typedef enum return_action {
-    PASS_ACTION = 0,
-    TCP_NEW
-} return_action_t;
+typedef enum return_action { PASS_ACTION = 0, TCP_NEW } return_action_t;
 
-static FORCE_INLINE void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt, uint8_t *ipRev, uint8_t *portRev) {
+static FORCE_INLINE void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt,
+                                           uint8_t *ipRev, uint8_t *portRev) {
     if (pkt->srcIp <= pkt->dstIp) {
         key->srcIp = pkt->srcIp;
         key->dstIp = pkt->dstIp;
@@ -73,7 +71,9 @@ static FORCE_INLINE void conntrack_get_key(struct ct_k *key, const struct packet
     }
 }
 
-static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHeaders *pkt, struct ct_v *ct_value, uint64_t timestamp) {
+static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHeaders *pkt,
+                                                                 struct ct_v *ct_value,
+                                                                 uint64_t timestamp) {
     // Found in forward direction
     if (ct_value->state == SYN_SENT) {
         // Still haven't received a SYN,ACK To the SYN
@@ -86,9 +86,9 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             // completing the handshake
             pkt->connStatus = INVALID;
             bpf_log_debug("[FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "SYN_SENT state. Flags: %x\n",
-                        pkt->flags);
+                          "check in "
+                          "SYN_SENT state. Flags: %x\n",
+                          pkt->flags);
             return PASS_ACTION;
         }
     }
@@ -101,19 +101,19 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             ct_value->state = ESTABLISHED;
             ct_value->ttl = timestamp + TCP_ESTABLISHED;
             bpf_log_debug("[FW_DIRECTION] Changing "
-                        "state from "
-                        "SYN_RECV to ESTABLISHED\n");
+                          "state from "
+                          "SYN_RECV to ESTABLISHED\n");
 
             return PASS_ACTION;
         } else {
             // Validation failed, either ACK is not the only flag set or
             // the ack number is wrong
             pkt->connStatus = INVALID;
-            
+
             bpf_log_debug("[FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "SYN_RECV state. Flags: %x\n",
-                        pkt->flags);
+                          "check in "
+                          "SYN_RECV state. Flags: %x\n",
+                          pkt->flags);
             return PASS_ACTION;
         }
     }
@@ -128,14 +128,14 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             ct_value->sequence = pkt->ackN;
 
             bpf_log_debug("[FW_DIRECTION] Changing "
-                        "state from "
-                        "ESTABLISHED to FIN_WAIT_1. Seq: %u\n",
-                        ct_value->sequence);
+                          "state from "
+                          "ESTABLISHED to FIN_WAIT_1. Seq: %u\n",
+                          ct_value->sequence);
 
             return PASS_ACTION;
         } else {
             ct_value->ttl = timestamp + TCP_ESTABLISHED;
-            
+
             return PASS_ACTION;
         }
     }
@@ -147,20 +147,20 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             // Received ACK
             ct_value->state = FIN_WAIT_2;
             ct_value->ttl = timestamp + TCP_FIN_WAIT;
-            
+
             bpf_log_debug("[FW_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to FIN_WAIT_2\n");
-            
+                          "state from "
+                          "FIN_WAIT_1 to FIN_WAIT_2\n");
+
         } else {
             // Validation failed, either ACK is not the only flag set or
             // the ack number is wrong
             pkt->connStatus = INVALID;
-            
+
             bpf_log_debug("[FW_DIRECTION] Failed ACK "
-                        "check in "
-                        "FIN_WAIT_1 state. Flags: %x. AckSeq: %u\n",
-                        pkt->flags, pkt->ackN);
+                          "check in "
+                          "FIN_WAIT_1 state. Flags: %x. AckSeq: %u\n",
+                          pkt->flags, pkt->ackN);
             return PASS_ACTION;
         }
     }
@@ -174,20 +174,19 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             ct_value->ttl = timestamp + TCP_LAST_ACK;
             ct_value->sequence = pkt->ackN;
 
-            
             bpf_log_debug("[FW_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_2 to LAST_ACK\n");
+                          "state from "
+                          "FIN_WAIT_2 to LAST_ACK\n");
 
             return PASS_ACTION;
         } else {
             // Still receiving packets
             ct_value->ttl = timestamp + TCP_FIN_WAIT;
-            
+
             bpf_log_debug("[FW_DIRECTION] Failed FIN "
-                        "check in "
-                        "FIN_WAIT_2 state. Flags: %x. Seq: %u\n",
-                        pkt->flags, ct_value->sequence);
+                          "check in "
+                          "FIN_WAIT_2 state. Flags: %x. Seq: %u\n",
+                          pkt->flags, ct_value->sequence);
 
             return PASS_ACTION;
         }
@@ -199,15 +198,14 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
             ct_value->state = TIME_WAIT;
             ct_value->ttl = timestamp + TCP_LAST_ACK;
 
-            
             bpf_log_debug("[FW_DIRECTION] Changing "
-                        "state from "
-                        "LAST_ACK to TIME_WAIT\n");
+                          "state from "
+                          "LAST_ACK to TIME_WAIT\n");
             return PASS_ACTION;
         }
         // Still receiving packets
         ct_value->ttl = timestamp + TCP_LAST_ACK;
-        
+
         return PASS_ACTION;
     }
 
@@ -220,14 +218,15 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHe
         }
     }
 
-    
     bpf_log_debug("[FW_DIRECTION] Should not get here. "
-                "Flags: %x. State: %d. \n",
-                pkt->flags, ct_value->state);
+                  "Flags: %x. State: %d. \n",
+                  pkt->flags, ct_value->state);
     return PASS_ACTION;
 }
 
-static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHeaders *pkt, struct ct_v *ct_value, uint64_t timestamp) {
+static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHeaders *pkt,
+                                                                 struct ct_v *ct_value,
+                                                                 uint64_t timestamp) {
     // Found in reverse direction
     if (ct_value->state == SYN_SENT) {
         // This should be a SYN, ACK answer
@@ -237,17 +236,17 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             ct_value->state = SYN_RECV;
             ct_value->ttl = timestamp + TCP_SYN_RECV;
             ct_value->sequence = pkt->seqN + HEX_BE_ONE;
-            
+
             bpf_log_debug("[REV_DIRECTION] Changing "
-                        "state from "
-                        "SYN_SENT to SYN_RECV\n");
+                          "state from "
+                          "SYN_SENT to SYN_RECV\n");
 
             return PASS_ACTION;
         }
         // Here is an unexpected packet, only a SYN, ACK is acepted as
         // an answer to a SYN
         pkt->connStatus = INVALID;
-        
+
         return PASS_ACTION;
     }
 
@@ -258,11 +257,11 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             (pkt->flags | (TCPHDR_SYN | TCPHDR_ACK)) == (TCPHDR_SYN | TCPHDR_ACK) &&
             pkt->ackN == ct_value->sequence) {
             ct_value->ttl = timestamp + TCP_SYN_RECV;
-            
+
             return PASS_ACTION;
         }
         pkt->connStatus = INVALID;
-        
+
         return PASS_ACTION;
     }
 
@@ -273,16 +272,16 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             ct_value->state = FIN_WAIT_1;
             ct_value->ttl = timestamp + TCP_FIN_WAIT;
             ct_value->sequence = pkt->ackN;
-            
+
             bpf_log_debug("[REV_DIRECTION] Changing "
-                        "state from "
-                        "ESTABLISHED to FIN_WAIT_1. Seq: %x\n",
-                        ct_value->sequence);
+                          "state from "
+                          "ESTABLISHED to FIN_WAIT_1. Seq: %x\n",
+                          ct_value->sequence);
 
             return PASS_ACTION;
         } else {
             ct_value->ttl = timestamp + TCP_ESTABLISHED;
-            
+
             return PASS_ACTION;
         }
     }
@@ -294,11 +293,10 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             // Received ACK
             ct_value->state = FIN_WAIT_2;
             ct_value->ttl = timestamp + TCP_FIN_WAIT;
-            
+
             bpf_log_debug("[REV_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to FIN_WAIT_2\n");
-            
+                          "state from "
+                          "FIN_WAIT_1 to FIN_WAIT_2\n");
 
             // Don't forward packet, we can continue performing the
             // check in case the current packet is a ACK,FIN. In this
@@ -307,11 +305,11 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             // Validation failed, either ACK is not the only flag set or
             // the ack number is wrong
             pkt->connStatus = INVALID;
-            
+
             bpf_log_debug("[REV_DIRECTION] Failed ACK "
-                        "check in "
-                        "FIN_WAIT_1 state. Flags: %d. AckSeq: %d\n",
-                        pkt->flags, pkt->ackN);
+                          "check in "
+                          "FIN_WAIT_1 state. Flags: %d. AckSeq: %d\n",
+                          pkt->flags, pkt->ackN);
             return PASS_ACTION;
         }
     }
@@ -324,20 +322,20 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             ct_value->state = LAST_ACK;
             ct_value->ttl = timestamp + TCP_LAST_ACK;
             ct_value->sequence = pkt->ackN;
-            
+
             bpf_log_debug("[REV_DIRECTION] Changing "
-                        "state from "
-                        "FIN_WAIT_1 to LAST_ACK\n");
+                          "state from "
+                          "FIN_WAIT_1 to LAST_ACK\n");
 
             return PASS_ACTION;
         } else {
             // Still receiving packets
             ct_value->ttl = timestamp + TCP_FIN_WAIT;
-            
+
             bpf_log_debug("[REV_DIRECTION] Failed FIN "
-                        "check in "
-                        "FIN_WAIT_2 state. Flags: %d. Seq: %d\n",
-                        pkt->flags, ct_value->sequence);
+                          "check in "
+                          "FIN_WAIT_2 state. Flags: %d. Seq: %d\n",
+                          pkt->flags, ct_value->sequence);
 
             return PASS_ACTION;
         }
@@ -348,41 +346,40 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
             // Ack to the last FIN.
             ct_value->state = TIME_WAIT;
             ct_value->ttl = timestamp + TCP_LAST_ACK;
-            
 
             bpf_log_debug("[REV_DIRECTION] Changing "
-                        "state from "
-                        "LAST_ACK to TIME_WAIT\n");
+                          "state from "
+                          "LAST_ACK to TIME_WAIT\n");
 
             return PASS_ACTION;
         }
         // Still receiving packets
         ct_value->ttl = timestamp + TCP_LAST_ACK;
-        
+
         return PASS_ACTION;
     }
 
     if (ct_value->state == TIME_WAIT) {
         if (pkt->connStatus == NEW) {
-            
+
             return TCP_NEW;
         } else {
             // Let the packet go, but do not update timers.
-            
+
             return PASS_ACTION;
         }
     }
 
-    
     bpf_log_debug("[REV_DIRECTION] Should not get here. "
-                "Flags: %d. "
-                "State: %d. \n",
-                pkt->flags, ct_value->state);
+                  "Flags: %d. "
+                  "State: %d. \n",
+                  pkt->flags, ct_value->state);
     return PASS_ACTION;
 }
 
-static FORCE_INLINE int advance_tcp_state_machine(struct ct_k *key, struct packetHeaders *pkt, 
-                                                  uint8_t *ipRev, uint8_t *portRev, uint64_t timestamp) {
+static FORCE_INLINE int advance_tcp_state_machine(struct ct_k *key, struct packetHeaders *pkt,
+                                                  uint8_t *ipRev, uint8_t *portRev,
+                                                  uint64_t timestamp) {
     struct ct_v *value;
     struct ct_v newEntry;
 
@@ -402,12 +399,16 @@ static FORCE_INLINE int advance_tcp_state_machine(struct ct_k *key, struct packe
             return_action_t action;
             if ((value->ipRev == *ipRev) && (value->portRev == *portRev)) {
                 action = handle_tcp_conntrack_forward(pkt, value, timestamp);
-                if (action == TCP_NEW) goto TCP_MISS;
-                else return PASS_ACTION;
+                if (action == TCP_NEW)
+                    goto TCP_MISS;
+                else
+                    return PASS_ACTION;
             } else if ((value->ipRev != *ipRev) && (value->portRev != *portRev)) {
                 action = handle_tcp_conntrack_reverse(pkt, value, timestamp);
-                if (action == TCP_NEW) goto TCP_MISS;
-                else return PASS_ACTION;
+                if (action == TCP_NEW)
+                    goto TCP_MISS;
+                else
+                    return PASS_ACTION;
             } else {
                 goto TCP_MISS;
             }
@@ -437,4 +438,4 @@ static FORCE_INLINE int advance_tcp_state_machine(struct ct_k *key, struct packe
     return -1;
 }
 
-#endif //CONNTRACK_HELPERS_H_
+#endif // CONNTRACK_HELPERS_H_

@@ -83,8 +83,9 @@ static void poll_stats(int map_fd, int interval, int duration) {
             log_info("%10llu pkt/s (%.2f Mpps)", (sum[0] - prev[0]) / interval, rate / ONE_MILLION);
         }
         if (sum[1] > prev[1]) {
-            float bit_rate = ((sum[1] - prev[1]) / interval)*8;
-            log_info("%10llu byte/s (%.2f Gbps)", (sum[1] - prev[1]) / interval, bit_rate / ONE_BILLION);
+            float bit_rate = ((sum[1] - prev[1]) / interval) * 8;
+            log_info("%10llu byte/s (%.2f Gbps)", (sum[1] - prev[1]) / interval,
+                     bit_rate / ONE_BILLION);
         }
         prev[0] = sum[0];
         prev[1] = sum[1];
@@ -118,10 +119,12 @@ int main(int argc, const char **argv) {
         OPT_HELP(),
         OPT_GROUP("Basic options"),
         OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Use spin locks", NULL, 0, 0),
-        OPT_BOOLEAN('p', "promiscuous", &enable_promiscuous, "Enable promiscuous mode on all interfaces", NULL, 0, 0),
+        OPT_BOOLEAN('p', "promiscuous", &enable_promiscuous,
+                    "Enable promiscuous mode on all interfaces", NULL, 0, 0),
         OPT_STRING('1', "iface1", &if1, "Interface to receive packet from", NULL, 0, 0),
         OPT_STRING('2', "iface2", &if2, "Interface to redirect packet to", NULL, 0, 0),
-        OPT_STRING('m', "if2_dst_mac", &if2_dst_mac, "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
+        OPT_STRING('m', "if2_dst_mac", &if2_dst_mac,
+                   "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
         // OPT_INTEGER('i', "interval", &interval, "Interval on which results
@@ -166,11 +169,11 @@ int main(int argc, const char **argv) {
             exit(1);
         } else {
             log_info("Got MAC for iface: %s, which is %02x:%02x:%02x:%02x:%02x:%02x", if1,
-                   if1_mac[0], if1_mac[1], if1_mac[2], if1_mac[3], if1_mac[4], if1_mac[5]);
+                     if1_mac[0], if1_mac[1], if1_mac[2], if1_mac[3], if1_mac[4], if1_mac[5]);
         }
     } else {
         log_error("Error, you must specify the interface where to attach the XDP "
-               "program");
+                  "program");
         exit(1);
     }
 
@@ -188,8 +191,8 @@ int main(int argc, const char **argv) {
             }
         }
         log_debug("Redirect mode is enabled. Packets will be redirected to %s "
-               "interface",
-               if2);
+                  "interface",
+                  if2);
 
         ifindex_if2 = if_nametoindex(if2);
         if (!ifindex_if2) {
@@ -204,7 +207,7 @@ int main(int argc, const char **argv) {
             exit(1);
         } else {
             log_info("Got MAC for iface: %s, which is %02x:%02x:%02x:%02x:%02x:%02x", if2,
-                   if2_mac[0], if2_mac[1], if2_mac[2], if2_mac[3], if2_mac[4], if2_mac[5]);
+                     if2_mac[0], if2_mac[1], if2_mac[2], if2_mac[3], if2_mac[4], if2_mac[5]);
         }
     }
 

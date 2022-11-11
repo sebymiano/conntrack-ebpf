@@ -71,7 +71,8 @@ static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h
     return true;
 }
 
-static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt, __u16 *nh_off) {
+static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt,
+                                     __u16 *nh_off) {
     __u16 l3_proto;
     struct iphdr *iph;
 

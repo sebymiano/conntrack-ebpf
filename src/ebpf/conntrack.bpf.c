@@ -28,8 +28,9 @@
 #include "conntrack_maps.h"
 #include "conntrack_bpf_log.h"
 #include "conntrack_parser.h"
+#include "conntrack_helpers.h"
 
-int my_pid = 0;
+extern __u32 LINUX_KERNEL_VERSION __kconfig;
 
 SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
@@ -53,7 +54,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     __builtin_memset(&key, 0, sizeof(key));
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
-
+    uint64_t timestamp;
     if (pkt.srcIp <= pkt.dstIp) {
         key.srcIp = pkt.srcIp;
         key.dstIp = pkt.dstIp;
@@ -84,9 +85,11 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     __builtin_memset(&newEntry, 0, sizeof(newEntry));
     struct ct_v *value;
 
-    uint64_t timestamp;
-    // timestamp = bpf_ktime_get_boot_ns();
-    timestamp = bpf_ktime_get_ns();
+    if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
+        timestamp = bpf_ktime_get_boot_ns();
+    } else {
+        timestamp = bpf_ktime_get_ns();
+    }
 
     /* == TCP  == */
     if (pkt.l4proto == IPPROTO_TCP) {

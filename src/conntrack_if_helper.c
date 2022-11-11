@@ -103,20 +103,20 @@ int enable_promisc(const char *ifname) {
 
     ioctl(sockfd, SIOCGIFFLAGS, &ifr);
     ifr.ifr_flags |= IFF_PROMISC;
-    
-    rv = ioctl(sockfd, SIOCSIFFLAGS, &ifr); 
+
+    rv = ioctl(sockfd, SIOCSIFFLAGS, &ifr);
     return rv;
 }
 
 int gen_random_mac(unsigned char out[6]) {
-    static const char chars[] = {'0','1','2','3','4','5','6','7',
-                                 '8','9','A','B','C','D','E','F'};
+    static const char chars[] = {'0', '1', '2', '3', '4', '5', '6', '7',
+                                 '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
 
     char results[18];
 
-    srand(time(NULL));   // Initialization, should only be called once.
+    srand(time(NULL)); // Initialization, should only be called once.
     int i;
-    for (i = 0; i < sizeof(results)/sizeof(char); i++) {
+    for (i = 0; i < sizeof(results) / sizeof(char); i++) {
         if (i == 2 || i == 5 || i == 8 || i == 11 || i == 14) {
             results[i] = ':';
         } else if (i == 17) {
@@ -133,6 +133,6 @@ int gen_random_mac(unsigned char out[6]) {
         log_error("%s is an invalid MAC address", results);
         return -1;
     }
-    
+
     return 0;
 }

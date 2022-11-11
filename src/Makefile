@@ -153,6 +153,7 @@ $(APPS): %: $(OUTPUT)/%.o $(OUTPUT)/$(HELPERS_OBJ) $(LIBBPF_OBJ) $(LIBARGPARSE_O
 
 format:
 	clang-format -style=file -i *.c *.h
+	clang-format -style=file -i ebpf/*.c ebpf/*.h
 	@grep -n "TODO" *.[ch] || true
 
 # delete failed targets

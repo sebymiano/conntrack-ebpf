@@ -30,28 +30,27 @@
 #include "conntrack_parser.h"
 #include "conntrack_helpers.h"
 
-int my_pid = 0;
+extern __u32 LINUX_KERNEL_VERSION __kconfig;
 
 struct flow_key {
-  __u32 src_ip;
-  __u32 dst_ip;
-  __u16 src_port;
-  __u16 dst_port;
-  __u8 protocol;
+    __u32 src_ip;
+    __u32 dst_ip;
+    __u16 src_port;
+    __u16 dst_port;
+    __u8 protocol;
 } __attribute__((packed));
 
 struct flow_info {
-  __u8 flags;
-  __u32 seqN;
-  __u32 ackN;
-  __u64 timestamp;
+    __u8 flags;
+    __u32 seqN;
+    __u32 ackN;
+    __u64 timestamp;
 } __attribute__((packed));
 
 struct metadata_elem {
-  struct flow_key flow;
-  struct flow_info info;
+    struct flow_key flow;
+    struct flow_info info;
 } __attribute__((packed));
-
 
 SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
@@ -88,13 +87,17 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
         if (i == (conntrack_cfg.num_pkts - 1)) {
             ipRev = 0;
             portRev = 0;
-            timestamp = bpf_ktime_get_boot_ns();
+            if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
+                timestamp = bpf_ktime_get_boot_ns();
+            } else {
+                timestamp = bpf_ktime_get_ns();
+            }
             bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", i);
             ret = advance_tcp_state_machine(&key, &curr_pkt, &ipRev, &portRev, timestamp);
             if (ret < 0) {
                 bpf_log_err("Received not TCP packet (id: %d)", i);
                 goto DROP;
-            }                 
+            }
             // This is the last pkt
             goto PASS_ACTION_FINAL;
         } else {
@@ -126,9 +129,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 }
                 goto PASS_ACTION;
             }
-        }        
+        }
 
-PASS_ACTION:;
+    PASS_ACTION:;
         nh_off += sizeof(struct metadata_elem);
         continue;
     }
