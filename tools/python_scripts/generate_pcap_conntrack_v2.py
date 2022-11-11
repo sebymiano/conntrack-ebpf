@@ -550,11 +550,11 @@ are coded in the script file itself."""
         pbar.update(count)
         md_elem_bytes = b''
         payload = b''
-        for n in range(1, num_cores + 1):
+        for n in reversed(range(1, num_cores)):
             flow_key = FlowKey()
             flow_info = FlowInfo()
             prev_index = i - n
-            if (i == 0 and n == 0) or (prev_index < 0):
+            if prev_index < 0:
                 flow_key.proto = 0
             else:
                 pkt = all_pkts[prev_index]

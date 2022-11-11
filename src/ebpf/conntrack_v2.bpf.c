@@ -74,7 +74,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     bpf_log_debug("Packet parsed, now starting the conntrack.\n");
 
-    md_size = (conntrack_cfg.num_pkts) * sizeof(struct metadata_elem);
+    md_size = (conntrack_cfg.num_pkts - 1) * sizeof(struct metadata_elem);
     if (data + nh_off + md_size > data_end) {
         bpf_log_err("No metadata available in the current pkt\n");
         goto DROP;
@@ -83,9 +83,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
     int ret;
-    for (int i = 0; i < conntrack_cfg.num_pkts + 1; i++) {
+    for (int i = 0; i < conntrack_cfg.num_pkts; i++) {
         uint64_t timestamp;
-        if (i == (conntrack_cfg.num_pkts)) {
+        if (i == (conntrack_cfg.num_pkts - 1)) {
             ipRev = 0;
             portRev = 0;
             timestamp = bpf_ktime_get_boot_ns();
