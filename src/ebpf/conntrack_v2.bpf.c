@@ -137,19 +137,25 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     }
 
 PASS_ACTION_FINAL:;
+    if (conntrack_cfg.quiet == 0) {
+        struct pkt_md *md;
+        __u32 md_key = 0;
+        md = bpf_map_lookup_elem(&metadata, &md_key);
+        if (md == NULL) {
+            bpf_log_err("No elements found in metadata map\n");
+            goto DROP;
+        }
 
-    struct pkt_md *md;
-    __u32 md_key = 0;
-    md = bpf_map_lookup_elem(&metadata, &md_key);
-    if (md == NULL) {
-        bpf_log_err("No elements found in metadata map\n");
-        goto DROP;
+        uint16_t pkt_len = (uint16_t)(data_end - data);
+
+        NO_TEAR_INC(md->cnt);
+        NO_TEAR_ADD(md->bytes_cnt, pkt_len);
     }
 
-    uint16_t pkt_len = (uint16_t)(data_end - data);
-
-    NO_TEAR_INC(md->cnt);
-    NO_TEAR_ADD(md->bytes_cnt, pkt_len);
+    if (conntrack_cfg.redirect_same_iface) {
+        bpf_log_debug("Redirect on the same interface\n");
+        goto REDIR_SAME_IFACE;
+    }
 
     if (conntrack_cfg.if_index_if2 == 0) {
         bpf_log_err("Redirection is disabled\n");
@@ -176,6 +182,10 @@ PASS_ACTION_FINAL:;
     bpf_log_debug("Redirect pkt to IF2 iface with ifindex: %d\n", conntrack_cfg.if_index_if2);
 
     return bpf_redirect(conntrack_cfg.if_index_if2, 0);
+
+REDIR_SAME_IFACE:;
+    swap_src_dst_mac(data);
+    return XDP_TX;
 
 DROP:;
     bpf_log_debug("Dropping packet!\n");

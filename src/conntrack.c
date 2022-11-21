@@ -106,6 +106,8 @@ int main(int argc, const char **argv) {
     const char *if2_dst_mac = NULL;
     int metadata_map_fd;
     int duration = -1;
+    int redirect_same_iface = 0;
+    int quiet = 0;
 
     // Disabled by default
     int log_level = 0;
@@ -113,12 +115,11 @@ int main(int argc, const char **argv) {
     unsigned char if1_mac[6];
     unsigned char if2_mac[6];
     unsigned char if2_dst_mac_byte[6];
-    // const char *output = NULL;
 
     struct argparse_option options[] = {
         OPT_HELP(),
         OPT_GROUP("Basic options"),
-        OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Use spin locks", NULL, 0, 0),
+        OPT_BOOLEAN('s', "spin_locks", &use_spinlocks, "Disable spin locks", NULL, 0, 0),
         OPT_BOOLEAN('p', "promiscuous", &enable_promiscuous,
                     "Enable promiscuous mode on all interfaces", NULL, 0, 0),
         OPT_STRING('1', "iface1", &if1, "Interface to receive packet from", NULL, 0, 0),
@@ -127,8 +128,8 @@ int main(int argc, const char **argv) {
                    "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
-        // OPT_INTEGER('i', "interval", &interval, "Interval on which results
-        // will be saved into the output file", NULL, 0, 0),
+        OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1", NULL, 0, 0),
+        OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
         OPT_END(),
     };
 
@@ -143,9 +144,11 @@ int main(int argc, const char **argv) {
     argc = argparse_parse(&argparse, argc, argv);
 
     if (use_spinlocks) {
-        log_trace("Spinlocks are ENABLED");
-    } else {
         log_trace("Spinlocks are DISABLED");
+        use_spinlocks = 0;
+    } else {
+        log_trace("Spinlocks are ENABLED");
+        use_spinlocks = 1;
     }
 
     if (enable_promiscuous) {
@@ -178,6 +181,11 @@ int main(int argc, const char **argv) {
     }
 
     if (if2 != NULL) {
+        if (redirect_same_iface) {
+            log_error("You cannot redirect on the same interface and specify the iface2");
+            exit(1);
+        }
+
         if (if2_dst_mac == NULL) {
             log_warn("Dst MAC not specified, I will generate a random MAC");
             if (gen_random_mac(if2_dst_mac_byte) != 0) {
@@ -230,6 +238,8 @@ int main(int argc, const char **argv) {
     skel->rodata->conntrack_cfg.if_index_if1 = ifindex_if1;
     skel->rodata->conntrack_cfg.if_index_if2 = ifindex_if2;
     skel->rodata->conntrack_cfg.enable_spin_locks = use_spinlocks;
+    skel->rodata->conntrack_cfg.redirect_same_iface = redirect_same_iface;
+    skel->rodata->conntrack_cfg.quiet = quiet;
 
     // This is not used
     memcpy(skel->rodata->conntrack_mac_cfg.if1_src_mac, if1_mac, 6);

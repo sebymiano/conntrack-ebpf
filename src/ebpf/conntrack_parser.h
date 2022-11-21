@@ -41,6 +41,21 @@
 #include "conntrack_common.h"
 #include "conntrack_bpf_log.h"
 
+static FORCE_INLINE void swap_src_dst_mac(void *data) {
+  unsigned short *p = data;
+  unsigned short dst[3];
+
+  dst[0] = p[0];
+  dst[1] = p[1];
+  dst[2] = p[2];
+  p[0] = p[3];
+  p[1] = p[4];
+  p[2] = p[5];
+  p[3] = dst[0];
+  p[4] = dst[1];
+  p[5] = dst[2];
+}
+
 static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h_proto,
                                             __u16 *nh_off) {
     *nh_off = ETH_HLEN;
