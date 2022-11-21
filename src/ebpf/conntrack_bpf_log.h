@@ -18,7 +18,6 @@
 #define BPF_LOG_H_
 
 #include <stddef.h>
-#include <string.h>
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>

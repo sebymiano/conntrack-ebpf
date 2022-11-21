@@ -24,6 +24,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+#include "cilium_builtin.h"
+
 #include "conntrack_structs.h"
 #include "conntrack_maps_v2.h"
 #include "conntrack_bpf_log.h"
@@ -78,25 +80,47 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
         bpf_log_err("No metadata available in the current pkt\n");
         goto DROP;
     }
-    struct ct_k key;
-    uint8_t ipRev = 0;
-    uint8_t portRev = 0;
+    struct ct_k curr_pkt_key = {0};
+
+    uint8_t curr_ipRev = 0;
+    uint8_t curr_portRev = 0;
+
+    conntrack_get_key(&curr_pkt_key, &curr_pkt, &curr_ipRev, &curr_portRev);
+    struct ct_v curr_value = {0};
+
+    bool curr_value_set = false;
+
     int ret;
     for (int i = 0; i < conntrack_cfg.num_pkts; i++) {
-        uint64_t timestamp;
         if (i == (conntrack_cfg.num_pkts - 1)) {
-            ipRev = 0;
-            portRev = 0;
-            if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
-                timestamp = bpf_ktime_get_boot_ns();
-            } else {
-                timestamp = bpf_ktime_get_ns();
-            }
             bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", i);
-            ret = advance_tcp_state_machine(&key, &curr_pkt, &ipRev, &portRev, timestamp);
-            if (ret < 0) {
-                bpf_log_err("Received not TCP packet (id: %d)", i);
+
+            rc = parse_packet(data, data_end, &curr_pkt, &nh_off);
+            if (rc < 0)
                 goto DROP;
+
+            if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
+                curr_pkt.timestamp = bpf_ktime_get_boot_ns();
+            } else {
+                curr_pkt.timestamp = bpf_ktime_get_ns();
+            }
+
+            if (curr_value_set) {
+                bpf_log_debug("Current value is not NULL, this means other packets in the md had same connection as current one");
+                // Keys are equals, we have same connection as current pkt
+                ret = advance_tcp_state_machine_local(&curr_pkt_key, &pkt, &curr_ipRev, &curr_portRev, &curr_value, &curr_value_set);
+                if (ret < 0) {
+                    bpf_log_err("Received not TCP packet (id: %d)", i);
+                    goto PASS_ACTION_FINAL;
+                }
+
+                bpf_map_update_elem(&connections, &curr_pkt_key, &curr_value, BPF_ANY);
+            } else {
+                ret = advance_tcp_state_machine_full(&curr_pkt, &curr_ipRev, &curr_ipRev);
+                if (ret < 0) {
+                    bpf_log_err("Received not TCP packet (id: %d)", i);
+                    goto PASS_ACTION_FINAL;
+                }
             }
             // This is the last pkt
             goto PASS_ACTION_FINAL;
@@ -112,20 +136,33 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             pkt.ackN = md_elem->info.ackN;
             pkt.seqN = md_elem->info.seqN;
             pkt.flags = md_elem->info.flags;
-            timestamp = md_elem->info.timestamp;
+            pkt.timestamp = md_elem->info.timestamp;
 
-            ipRev = 0;
-            portRev = 0;
+            uint8_t local_ipRev = 0;
+            uint8_t local_portRev = 0;
             // This is a trick to ensure the first N packets are skipped
             if (pkt.l4proto == 0) {
                 bpf_log_debug("Skip this packet (id: %d) since the info are 0ed\n", i);
                 goto PASS_ACTION;
             } else {
+                struct ct_k local_key = {0};
+                conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
+
                 bpf_log_debug("Dealing with pkt: %i taken from the metadata.\n", i);
-                ret = advance_tcp_state_machine(&key, &pkt, &ipRev, &portRev, timestamp);
-                if (ret < 0) {
-                    bpf_log_err("Received not TCP packet (id: %d)", i);
-                    goto DROP;
+                if (memcmp(&local_key, &curr_pkt_key, sizeof(curr_pkt_key)) == 0) {
+                    bpf_log_debug("Pkt has same key has current packet, use local variable");
+                    // Keys are equals, we have same connection as current pkt
+                    ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev, &local_portRev, &curr_value, &curr_value_set);
+                    if (ret < 0) {
+                        bpf_log_err("Received not TCP packet (id: %d)", i);
+                        goto PASS_ACTION;
+                    }
+                } else {
+                    ret = advance_tcp_state_machine_full(&pkt, &local_ipRev, &local_portRev);
+                    if (ret < 0) {
+                        bpf_log_err("Received not TCP packet (id: %d)", i);
+                        goto PASS_ACTION;
+                    }
                 }
                 goto PASS_ACTION;
             }
@@ -177,8 +214,8 @@ PASS_ACTION_FINAL:;
     struct ethhdr *eth = (struct ethhdr *)data;
     eth->h_proto = bpf_htons(ETH_P_IP);
 
-    __builtin_memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac, sizeof(eth->h_source));
-    __builtin_memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac, sizeof(eth->h_dest));
+    memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac, sizeof(eth->h_source));
+    memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac, sizeof(eth->h_dest));
     bpf_log_debug("Redirect pkt to IF2 iface with ifindex: %d\n", conntrack_cfg.if_index_if2);
 
     return bpf_redirect(conntrack_cfg.if_index_if2, 0);

@@ -24,6 +24,8 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+#include "cilium_builtin.h"
+
 #include "conntrack_structs.h"
 #include "conntrack_maps.h"
 #include "conntrack_bpf_log.h"
@@ -50,8 +52,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     bpf_log_debug("Packet parsed, now starting the conntrack.\n");
 
-    struct ct_k key;
-    __builtin_memset(&key, 0, sizeof(key));
+    struct ct_k key = {0};
+    // memset(&key, 0, sizeof(key));
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
     uint64_t timestamp;
@@ -82,7 +84,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     }
 
     struct ct_v newEntry;
-    __builtin_memset(&newEntry, 0, sizeof(newEntry));
+    memset(&newEntry, 0, sizeof(newEntry));
     struct ct_v *value;
 
     if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
@@ -164,7 +166,6 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             if (value->state == ESTABLISHED) {
-                //bpf_log_debug("Connnection is ESTABLISHED\n");
                 if ((pkt.flags & TCPHDR_FIN) != 0) {
                     // Received first FIN from "original" direction.
                     // Changing state to FIN_WAIT_1
@@ -182,6 +183,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 } else {
                     value->ttl = timestamp + TCP_ESTABLISHED;
                     ctr_spin_unlock(&value->lock);
+                    bpf_log_debug("Connnection is ESTABLISHED\n");
                     goto PASS_ACTION;
                 }
             }
@@ -315,7 +317,6 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             if (value->state == ESTABLISHED) {
-                //bpf_log_debug("Connnection is ESTABLISHED\n");
                 if ((pkt.flags & TCPHDR_FIN) != 0) {
                     // Initiating closing sequence
                     value->state = FIN_WAIT_1;
@@ -331,6 +332,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 } else {
                     value->ttl = timestamp + TCP_ESTABLISHED;
                     ctr_spin_unlock(&value->lock);
+                    bpf_log_debug("Connnection is ESTABLISHED\n");
                     goto PASS_ACTION;
                 }
             }
@@ -495,7 +497,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 bpf_log_debug("[REV_DIRECTION] Changing state "
                               "from "
                               "NEW to ESTABLISHED\n");
-                
+
                 goto PASS_ACTION;
             } else {
                 // value->state == ESTABLISHED
@@ -561,8 +563,8 @@ PASS_ACTION:;
     struct ethhdr *eth = (struct ethhdr *)data;
     eth->h_proto = bpf_htons(ETH_P_IP);
 
-    __builtin_memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac, sizeof(eth->h_source));
-    __builtin_memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac, sizeof(eth->h_dest));
+    memcpy(eth->h_source, (void *)conntrack_mac_cfg.if2_src_mac, sizeof(eth->h_source));
+    memcpy(eth->h_dest, (void *)conntrack_mac_cfg.if2_dst_mac, sizeof(eth->h_dest));
     bpf_log_debug("Redirect pkt to IF2 iface with ifindex: %d\n", conntrack_cfg.if_index_if2);
 
     return bpf_redirect(conntrack_cfg.if_index_if2, 0);

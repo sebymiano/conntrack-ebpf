@@ -128,7 +128,8 @@ int main(int argc, const char **argv) {
                    "When specify the if2, we need to know the dst MAC", NULL, 0, 0),
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
-        OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1", NULL, 0, 0),
+        OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
+                    NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
         OPT_END(),
     };
@@ -155,6 +156,18 @@ int main(int argc, const char **argv) {
         log_trace("Promiscuous mode is ENABLED");
     } else {
         log_trace("Promiscuous mode is DISABLED");
+    }
+
+    if (redirect_same_iface) {
+        log_trace("Redirect on the same interface (XDP_TX) mode is ENABLED");
+    } else {
+        log_trace("Redirect on the same interface (XDP_TX) mode is DISABLED");
+    }
+
+    if (quiet) {
+        log_trace("Quiet mode is ENABLED (do NOT print and gather stats from the data plane)");
+    } else {
+        log_trace("Quiet mode is DISABLED (print and gather stats from the data plane)");
     }
 
     if (if1 != NULL) {

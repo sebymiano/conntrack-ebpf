@@ -130,8 +130,9 @@ int main(int argc, const char **argv) {
         OPT_INTEGER('l', "log_level", &log_level, "Log level", NULL, 0, 0),
         OPT_INTEGER('d', "duration", &duration, "Duration of the experiment", NULL, 0, 0),
         OPT_INTEGER('n', "num_cores", &num_cores,
-                    "# of cores to use (default is the # of core of the machine)", NULL, 0, 0),\
-        OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1", NULL, 0, 0),
+                    "# of cores to use (default is the # of core of the machine)", NULL, 0, 0),
+        OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
+                    NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
         // OPT_INTEGER('i', "interval", &interval, "Interval on which results
         // will be saved into the output file", NULL, 0, 0),
@@ -157,6 +158,18 @@ int main(int argc, const char **argv) {
     }
 
     log_trace("Number of CORES is set to %d", num_cores);
+
+    if (redirect_same_iface) {
+        log_trace("Redirect on the same interface (XDP_TX) mode is ENABLED");
+    } else {
+        log_trace("Redirect on the same interface (XDP_TX) mode is DISABLED");
+    }
+
+    if (quiet) {
+        log_trace("Quiet mode is ENABLED (do NOT print and gather stats from the data plane)");
+    } else {
+        log_trace("Quiet mode is DISABLED (print and gather stats from the data plane)");
+    }
 
     if (if1 != NULL) {
         log_info("XDP program will be attached to %s interface", if1);
@@ -186,7 +199,7 @@ int main(int argc, const char **argv) {
             log_error("You cannot redirect on the same interface and specify the iface2");
             exit(1);
         }
-        
+
         if (if2_dst_mac == NULL) {
             log_warn("Dst MAC not specified, I will generate a random MAC");
             if (gen_random_mac(if2_dst_mac_byte) != 0) {
