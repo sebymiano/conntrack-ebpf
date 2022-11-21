@@ -46,31 +46,35 @@ typedef enum return_action { PASS_ACTION = 0, TCP_NEW } return_action_t;
 
 static FORCE_INLINE void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt,
                                            uint8_t *ipRev, uint8_t *portRev) {
-    if (pkt->srcIp <= pkt->dstIp) {
+    if (pkt->srcIp == pkt->dstIp) {
+        if (pkt->srcPort <= pkt->dstPort) {
+            key->srcPort = pkt->srcPort;
+            key->dstPort = pkt->dstPort;
+            *portRev = 0;
+            *ipRev = 0;
+        } else {
+            key->srcPort = pkt->dstPort;
+            key->dstPort = pkt->srcPort;
+            *portRev = 1;
+            *ipRev = 1;
+        }
+    } else if (pkt->srcIp < pkt->dstIp) {
         key->srcIp = pkt->srcIp;
         key->dstIp = pkt->dstIp;
+        key->srcPort = pkt->srcPort;
+        key->dstPort = pkt->dstPort;
         *ipRev = 0;
+        *portRev = 0;
     } else {
         key->srcIp = pkt->dstIp;
         key->dstIp = pkt->srcIp;
+        key->srcPort = pkt->dstPort;
+        key->dstPort = pkt->srcPort;
         *ipRev = 1;
+        *portRev = 1;
     }
 
     key->l4proto = pkt->l4proto;
-
-    if (pkt->srcPort < pkt->dstPort) {
-        key->srcPort = pkt->srcPort;
-        key->dstPort = pkt->dstPort;
-        *portRev = 0;
-    } else if (pkt->srcPort > pkt->dstPort) {
-        key->srcPort = pkt->dstPort;
-        key->dstPort = pkt->srcPort;
-        *portRev = 1;
-    } else {
-        key->srcPort = pkt->srcPort;
-        key->dstPort = pkt->dstPort;
-        *portRev = *ipRev;
-    }
 }
 
 static FORCE_INLINE return_action_t handle_tcp_conntrack_forward(struct packetHeaders *pkt,
@@ -379,8 +383,8 @@ static FORCE_INLINE return_action_t handle_tcp_conntrack_reverse(struct packetHe
     return PASS_ACTION;
 }
 
-static FORCE_INLINE int advance_tcp_state_machine_full(struct packetHeaders *pkt,
-                                                       uint8_t *ipRev, uint8_t *portRev) {
+static FORCE_INLINE int advance_tcp_state_machine_full(struct packetHeaders *pkt, uint8_t *ipRev,
+                                                       uint8_t *portRev) {
     struct ct_v *value;
     struct ct_v newEntry = {0};
     struct ct_k key = {0};
@@ -438,7 +442,8 @@ static FORCE_INLINE int advance_tcp_state_machine_full(struct packetHeaders *pkt
 }
 
 static FORCE_INLINE int advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt,
-                                                       uint8_t *ipRev, uint8_t *portRev, struct ct_v *value, bool *curr_value_set) {
+                                                        uint8_t *ipRev, uint8_t *portRev,
+                                                        struct ct_v *value, bool *curr_value_set) {
     /* == TCP  == */
     if (pkt->l4proto == IPPROTO_TCP) {
         // If it is a RST, label it as established.

@@ -106,9 +106,11 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             }
 
             if (curr_value_set) {
-                bpf_log_debug("Current value is not NULL, this means other packets in the md had same connection as current one");
+                bpf_log_debug("Current value is not NULL, this means other packets in the md had "
+                              "same connection as current one");
                 // Keys are equals, we have same connection as current pkt
-                ret = advance_tcp_state_machine_local(&curr_pkt_key, &pkt, &curr_ipRev, &curr_portRev, &curr_value, &curr_value_set);
+                ret = advance_tcp_state_machine_local(&curr_pkt_key, &pkt, &curr_ipRev,
+                                                      &curr_portRev, &curr_value, &curr_value_set);
                 if (ret < 0) {
                     bpf_log_err("Received not TCP packet (id: %d)", i);
                     goto PASS_ACTION_FINAL;
@@ -152,7 +154,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                 if (memcmp(&local_key, &curr_pkt_key, sizeof(curr_pkt_key)) == 0) {
                     bpf_log_debug("Pkt has same key has current packet, use local variable");
                     // Keys are equals, we have same connection as current pkt
-                    ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev, &local_portRev, &curr_value, &curr_value_set);
+                    ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev,
+                                                          &local_portRev, &curr_value,
+                                                          &curr_value_set);
                     if (ret < 0) {
                         bpf_log_err("Received not TCP packet (id: %d)", i);
                         goto PASS_ACTION;

@@ -57,31 +57,35 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     uint8_t ipRev = 0;
     uint8_t portRev = 0;
     uint64_t timestamp;
-    if (pkt.srcIp <= pkt.dstIp) {
-        key.srcIp = pkt.srcIp;
-        key.dstIp = pkt.dstIp;
+    if (pkt.srcIp == pkt.dstIp) {
+        if (pkt.srcPort <= pkt.dstPort) {
+            pkt.srcPort = pkt.srcPort;
+            pkt.dstPort = pkt.dstPort;
+            portRev = 0;
+            ipRev = 0;
+        } else {
+            pkt.srcPort = pkt.dstPort;
+            pkt.dstPort = pkt.srcPort;
+            portRev = 1;
+            ipRev = 1;
+        }
+    } else if (pkt.srcIp < pkt.dstIp) {
+        pkt.srcIp = pkt.srcIp;
+        pkt.dstIp = pkt.dstIp;
+        pkt.srcPort = pkt.srcPort;
+        pkt.dstPort = pkt.dstPort;
         ipRev = 0;
-    } else {
-        key.srcIp = pkt.dstIp;
-        key.dstIp = pkt.srcIp;
-        ipRev = 1;
-    }
-
-    key.l4proto = pkt.l4proto;
-
-    if (pkt.srcPort < pkt.dstPort) {
-        key.srcPort = pkt.srcPort;
-        key.dstPort = pkt.dstPort;
         portRev = 0;
-    } else if (pkt.srcPort > pkt.dstPort) {
-        key.srcPort = pkt.dstPort;
-        key.dstPort = pkt.srcPort;
-        portRev = 1;
     } else {
-        key.srcPort = pkt.srcPort;
-        key.dstPort = pkt.dstPort;
-        portRev = ipRev;
+        pkt.srcIp = pkt.dstIp;
+        pkt.dstIp = pkt.srcIp;
+        pkt.srcPort = pkt.dstPort;
+        pkt.dstPort = pkt.srcPort;
+        ipRev = 1;
+        portRev = 1;
     }
+
+    pkt.l4proto = pkt.l4proto;
 
     struct ct_v newEntry;
     memset(&newEntry, 0, sizeof(newEntry));

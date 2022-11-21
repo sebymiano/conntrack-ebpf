@@ -56,8 +56,7 @@ static FORCE_INLINE void swap_src_dst_mac(void *data) {
     p[5] = dst[2];
 }
 
-static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h_proto,
-                                            __u16 *nh_off) {
+static bool validate_ethertype(void *data, void *data_end, __u16 *h_proto, __u16 *nh_off) {
     *nh_off = ETH_HLEN;
 
     if (data + *nh_off > data_end)
@@ -86,8 +85,7 @@ static FORCE_INLINE bool validate_ethertype(void *data, void *data_end, __u16 *h
     return true;
 }
 
-static FORCE_INLINE int parse_packet(void *data, void *data_end, struct packetHeaders *pkt,
-                                     __u16 *nh_off) {
+static int parse_packet(void *data, void *data_end, struct packetHeaders *pkt, __u16 *nh_off) {
     __u16 l3_proto;
     struct iphdr *iph;
 
