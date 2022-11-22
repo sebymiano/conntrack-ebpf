@@ -37,11 +37,12 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+#include "cilium_builtin.h"
 #include "conntrack_structs.h"
 #include "conntrack_common.h"
 #include "conntrack_bpf_log.h"
 
-static FORCE_INLINE void swap_src_dst_mac(void *data) {
+static __always_inline void swap_src_dst_mac(void *data) {
     unsigned short *p = data;
     unsigned short dst[3];
 
