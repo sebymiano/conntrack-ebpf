@@ -54,9 +54,9 @@ struct metadata_elem {
     struct flow_info info;
 } __attribute__((packed));
 
-static __always_inline int handle_pkt_from_md(void *data, __u16 nh_off,
-                                              const struct ct_k *curr_pkt_key,
-                                              struct ct_v *curr_value, bool *curr_value_set) {
+static int handle_pkt_from_md(void *data, __u16 nh_off, const struct ct_k *curr_pkt_key,
+                              struct ct_v *curr_value, bool *curr_value_set,
+                              struct ct_v *map_curr_value) {
     struct metadata_elem *md_elem;
     int ret;
     struct packetHeaders pkt = {0};
@@ -84,12 +84,11 @@ static __always_inline int handle_pkt_from_md(void *data, __u16 nh_off,
         conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
 
         if (memcmp(&local_key, curr_pkt_key, sizeof(*curr_pkt_key)) == 0) {
-            struct ct_v *local_curr_value = NULL;
             bpf_log_debug("Pkt has same key has current packet, use local variable");
-            if (!(*curr_value_set)) {
-                local_curr_value = bpf_map_lookup_elem(&connections, &local_key);
-                if (local_curr_value) {
-                    memcpy(curr_value, local_curr_value, sizeof(*curr_value));
+            if (!*curr_value_set) {
+                map_curr_value = bpf_map_lookup_elem(&connections, &local_key);
+                if (map_curr_value) {
+                    memcpy(curr_value, map_curr_value, sizeof(*curr_value));
                     *curr_value_set = true;
                 }
             }
@@ -106,6 +105,43 @@ static __always_inline int handle_pkt_from_md(void *data, __u16 nh_off,
                 bpf_log_err("Received not TCP packet");
                 return 0;
             }
+        }
+    }
+    return 0;
+}
+
+static int handle_current_pkt(struct packetHeaders *curr_pkt, struct ct_k *curr_pkt_key,
+                              struct ct_v *curr_value, bool *curr_value_set,
+                              struct ct_v *map_curr_value, uint8_t curr_ipRev,
+                              uint8_t curr_portRev) {
+    int ret;
+    if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
+        curr_pkt->timestamp = bpf_ktime_get_boot_ns();
+    } else {
+        curr_pkt->timestamp = bpf_ktime_get_ns();
+    }
+
+    bpf_log_debug("Current value is not NULL, this means other packets in the md had "
+                  "same connection as current one");
+    // Keys are equals, we have same connection as current pkt
+    ret = advance_tcp_state_machine_local(curr_pkt_key, curr_pkt, &curr_ipRev, &curr_portRev,
+                                          curr_value, curr_value_set);
+    if (ret < 0) {
+        bpf_log_err("Received not TCP packet");
+        return 0;
+    }
+
+    if (ret == TCP_NEW || map_curr_value == NULL) {
+        bpf_log_debug("Create new entry in the map");
+        bpf_map_update_elem(&connections, curr_pkt_key, curr_value, BPF_ANY);
+    } else {
+        if (map_curr_value != NULL) {
+            bpf_log_debug("Update existing map entry");
+            map_curr_value->ipRev = curr_value->ipRev;
+            map_curr_value->portRev = curr_value->portRev;
+            map_curr_value->sequence = curr_value->sequence;
+            map_curr_value->ttl = curr_value->ttl;
+            map_curr_value->state = curr_value->state;
         }
     }
     return 0;
@@ -150,7 +186,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     for (int i = 0; i < conntrack_cfg.num_pkts; i++) {
         if (i == (conntrack_cfg.num_pkts - 1)) {
             bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", i);
-
+            // handle_current_pkt(&curr_pkt, &curr_pkt_key, &curr_value, &curr_value_set,
+            //                    map_curr_value, curr_ipRev, curr_portRev);
             if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
                 curr_pkt.timestamp = bpf_ktime_get_boot_ns();
             } else {
@@ -184,6 +221,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
             goto PASS_ACTION_FINAL;
         } else {
             bpf_log_debug("Dealing with pkt: %d taken from the metadata.\n", i);
+            // handle_pkt_from_md(data, nh_off, &curr_pkt_key, &curr_value, &curr_value_set,
+            //                    map_curr_value);
             struct metadata_elem *md_elem;
             struct packetHeaders pkt = {0};
             md_elem = data + nh_off;

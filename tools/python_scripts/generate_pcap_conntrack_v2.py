@@ -412,6 +412,15 @@ def ip_proto(pkt):
     proto_field = pkt.get_field('proto')
     return proto_field.i2s[pkt.proto]
 
+def change_mac(mac, offset):
+    return "{:012X}".format(int(mac, 16) + offset)
+
+def mac_add_colons(mac):
+    return ':'.join(mac[i:i+2] for i in range(0,12,2))
+
+def mac_del_colons(mac):
+    return mac.replace(':', '')
+
 def main():
 
     desc = """Generate pcap file for one or more TCP/IPv4 streams.
@@ -423,6 +432,7 @@ are coded in the script file itself."""
     parser.add_argument("-o", '--out', required = True, help='Output pcap file name')
     parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v2'], help='v1 is for shared state, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, default=0, help="Number of cores")
+    parser.add_argument('-r', '--rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
 
     args = parser.parse_args()
 
@@ -439,6 +449,7 @@ are coded in the script file itself."""
 
     version = args.version
     num_cores = args.num_cores
+    use_mac_for_rss = args.rss
 
     if version == "v2":
         if num_cores <= 0:
@@ -588,6 +599,9 @@ are coded in the script file itself."""
 
         payload = md_elem_bytes + bytes(curr_pkt[Raw].load)
         curr_pkt[Raw].load = payload    
+        if use_mac_for_rss:
+            new_mac = change_mac(mac_del_colons(server_mac), i % num_cores)
+            curr_pkt[Ether].dst = mac_add_colons(new_mac)
 
         pcap.write(curr_pkt)
     print("")
