@@ -1,0 +1,25 @@
+---
+ remote_host: "host"
+ remote_user: "user"
+ remote_conntrack_path: "~/conntrack-ebpf"
+ remote_iface: "eth0"
+ #local_private_key: "/home/user/.ssh/id_rsa"
+ local_iface_pci_id: "0000:3b:00.0"
+ local_numa_core: 0
+ local_pcaps:
+   - core: 1
+     path: "~/conntrack_v1.pcap"
+   - core: 2
+     path: "~/conntrack_v2_2cores.pcap"
+   - core: 3
+     path: "~/conntrack_v2_3cores.pcap"
+   - core: 4
+     path: "~/conntrack_v2_4cores.pcap"
+   - core: 5
+     path: "~/conntrack_v2_5cores.pcap"
+   - core: 6
+     path: "~/conntrack_v2_6cores.pcap"
+   - core: 7
+     path: "~/conntrack_v2_7cores.pcap"
+   - core: 8
+     path: "~/conntrack_v2_8cores.pcap"
