@@ -236,7 +236,7 @@ def bps_to_pps(bits_per_sec, packet_len):
 
 def make_tcp_stream(client_ip, server_ip, client_mac, server_mac,
                     client_port, server_port, bps, duration,
-                    ts_first_packet, packet_len):
+                    ts_first_packet, packet_len, num_pkt_every_connection = 0):
     """Return an array of 2-tuples, each 2-tuple representing a packet. The
     first member of each tuple is the timestamp (at which it is inserted in the
     pcap), and the second member is a dictionary that contains packet
@@ -300,6 +300,8 @@ def make_tcp_stream(client_ip, server_ip, client_mac, server_mac,
 
     (pps, gap) = bps_to_pps(bps, packet_len)
     num_packets = int(pps * duration) + 1
+    if num_pkt_every_connection != 0:
+        num_packets = num_pkt_every_connection
     server_data_offset = 0
 
     payload = RandString(size = tcp_payload_len)
@@ -472,6 +474,7 @@ are coded in the script file itself."""
         client_port = random.randint(config['client_port_start'], config['client_port_end'])
         server_port = random.randint(config['server_port_start'], config['server_port_end'])
         bps = random.randint(config['rate_bps_start'], config['rate_bps_end'])
+        num_pkt_every_connection = config['num_pkts_every_connection']
         duration = random.randint(config['duration_start'], config['duration_end'])
         packet_len = random.randint(config['packet_length_start'], config['packet_length_end'])
 
@@ -484,7 +487,8 @@ are coded in the script file itself."""
                             bps = bps,
                             duration = duration,
                             ts_first_packet = start_at,
-                            packet_len = packet_len)
+                            packet_len = packet_len,
+                            num_pkt_every_connection = num_pkt_every_connection)
         start_at += duration
         # name = f"Session_{i}"
         # print('"{}" contains {} packets'.format(name, len(s)))

@@ -10,6 +10,7 @@
  client_port_end: 50214
  rate_bps_start: 30000 #30kbps
  rate_bps_end: 300000 #300kbps
+ num_pkts_every_connection: 100
  packet_length_start: 64
  packet_length_end: 64
  duration_start: 1 # 30s
