@@ -71,7 +71,7 @@ static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
     int tot_duration = 0;
 
     if (out_fp != NULL) {
-        fprintf(out_fp,"Seconds,Rate (Mpps),Rate (Gbps)\n");
+        fprintf(out_fp,"Seconds,RX-packets,RX-bytes\n");
     }
     while (1) {
         __u32 key = 0;
