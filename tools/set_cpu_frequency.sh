@@ -1,0 +1,63 @@
+#!/bin/bash
+
+CPU_FREQ_KHZ=0
+
+get_rated_cpufreq() {
+	CPU_FREQ_GHZ=$(lscpu | grep -o "[0-9\.]\+GHz" | grep -o "[0-9\.]\+" | sed 's/\.//')
+	CPU_FREQ_KHZ=$((${CPU_FREQ_GHZ}*10*1000))
+	echo $CPU_FREQ_KHZ
+}
+
+set_freq() {
+	# make both min and max to the advertised freq
+	if [ -d /sys/devices/system/cpu/cpu0/cpufreq/ ]; then
+		for i in $(ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq); do echo "${CPU_FREQ_KHZ}" | sudo tee $i > /dev/null 2>&1 ;done
+		for i in $(ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq); do echo "${CPU_FREQ_KHZ}" | sudo tee $i > /dev/null 2>&1 ;done
+	fi
+}
+
+disable_cstate() {
+	echo "Disabling C-states"
+	for i in $(ls /sys/devices/system/cpu/cpu*/cpuidle/state*/disable); do echo "1" | sudo tee $i > /dev/null 2>&1 ;done
+}
+
+disable_turbo() {
+	if ! [ -x "$(command -v rdmsr)" ]; then
+		echo "Installing msr-tools ..."
+		sudo apt install msr-tools
+	fi
+
+	# make sure we have this module loaded
+	# if [ -z "$(lsmod | grep msr)" ]; then
+	# 	echo "Loading msr module"
+	# 	sudo modprobe msr
+	# fi
+	echo "Loading msr module"
+	sudo modprobe msr
+
+	# disable turbo boost (bit 38 on 0x1a0 msr)
+	echo "Disabling turboboost"
+	sudo wrmsr -a 0x1a0 $(printf "0x%x" $(($(sudo rdmsr -d 0x1a0)|(1<<38))))
+}
+
+set_const_freq() {
+	set_freq;
+
+	disable_cstate;
+
+	disable_turbo;
+}
+
+dump_sys_state() {
+	if [ -d /sys/devices/system/cpu/cpu0/cpufreq/ ]; then
+		for i in $(ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq); do echo "$i: $(cat $i)";done
+		for i in $(ls /sys/devices/system/cpu/cpu*/cpufreq/scaling_min_freq); do echo "$i: $(cat $i)";done
+	fi
+
+	for i in $(ls /sys/devices/system/cpu/cpu*/cpuidle/state*/disable); do echo "$i: $(cat $i)";done
+	sudo rdmsr -a 0x1a0 -f 38:38
+}
+
+get_rated_cpufreq;
+set_const_freq;
+dump_sys_state;

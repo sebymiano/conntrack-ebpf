@@ -5,36 +5,67 @@ import os
 import paramiko
 import time
 import subprocess
+import pandas as pd
+import numpy as np
 
 CONFIG_file_default = f"{sys.path[0]}/config_test.yaml"
+
+def kill_conntrack_bin(client, version):
+    if version == "v1":
+        conntrack_bin_name = "conntrack"
+    else:
+        conntrack_bin_name = "conntrack_v2"
+    _, ssh_stdout, _ = client.exec_command(f"sudo pkill {conntrack_bin_name}")
+    return ssh_stdout.channel.recv_exit_status()
 
 def kill_tmux_session(client, session_name):
     _, ssh_stdout, _ = client.exec_command(f"tmux kill-session -t {session_name}")
     return ssh_stdout.channel.recv_exit_status()
 
+def remove_xdp_from_iface(client, iface):
+    _, ssh_stdout, _ = client.exec_command(f"sudo ip link set {iface} xdp off")
+    return ssh_stdout.channel.recv_exit_status()
+
+def clean_environment(client, version, remote_iface):
+    kill_conntrack_bin(client, version)
+    kill_tmux_session(client, "conntrack")
+    remove_xdp_from_iface(client, remote_iface)
+
 def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, duration):
+    #make sure we start from a clean environment
+    clean_environment(client, version, remote_iface)
+
     _, ssh_stdout, _ = client.exec_command(f"sudo -S ethtool -L {remote_iface} combined {core}")
     if ssh_stdout.channel.recv_exit_status() == 0:
         print(f"Changed NIC queues to {core}")
     else:
         raise Exception("Error while executing ethtool command")
 
+    print("Let's disable cstates")
+    _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
+    if ssh_stdout.channel.recv_exit_status() == 0:
+        print(f"Cstates disabled")
+    else:
+        raise Exception("Error while disabling cstates")   
+
     # Adding 60 seconds to make sure the system will setup everything before closing the test
     new_duration = duration + 60
     if version == "v1":
-        conntrack_bin = f"{remote_conntrack_path}/src/conntrack"
+        conntrack_bin_name = "conntrack"
+        conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
         conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -d {new_duration}"
     else:
-        conntrack_bin = f"{remote_conntrack_path}/src/conntrack_v2"
+        conntrack_bin_name = "conntrack_v2"
+        conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
         conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -n {core} -d {new_duration}"
 
     _, ssh_stdout, _ = client.exec_command(f"tmux new-session -d -s conntrack 'sudo {conntrack_cmd}'")
 
     print("Command sent to remote server, let's wait until it starts")
-    print(f"Cmd: {conntrack_cmd}")
+    print(f"Remote cmd: {conntrack_cmd}")
     time.sleep(30)
     
-    _, ssh_stdout, _ = client.exec_command(f"pgrep -l {conntrack_bin}")
+    _, ssh_stdout, _ = client.exec_command(f"pgrep {conntrack_bin_name}")
     cmd_output = ssh_stdout.readlines()
     if not cmd_output:
         raise Exception("Conntrack command not executed successfully")
@@ -51,6 +82,13 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         raise Exception("Error while setting core affinity")   
 
 
+def parse_dpdk_results(stats_file_name):
+    df = pd.read_csv(stats_file_name)
+    # Discard 10 elements at beginning and at end
+    mpps = round(np.mean(df["RX-packets"][10:-10])/1e6, 2)
+    return mpps
+
+
 def main():
     desc = """Run test for conntrack_bpf with different number of cores"""
     
@@ -58,8 +96,9 @@ def main():
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', type=str, required = True, help='Output file name')
     parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v2'], help='v1 is for shared state, v2 is for local state')
-    parser.add_argument("-n", "--num-cores", type=int, required = True, help="Number of cores")
+    parser.add_argument("-n", "--num-cores", type=int, required = True, help="Max number of cores. The test will start from 1 to this value")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
+    parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
 
     args = parser.parse_args()
 
@@ -77,6 +116,8 @@ def main():
     version = args.version
     num_cores = args.num_cores
     duration = args.duration
+    runs = args.runs
+    output_filename = args.out
 
     remote_host = config["remote_host"]
     remote_user = config["remote_user"]
@@ -93,51 +134,62 @@ def main():
     else:
         local_private_key = config["local_private_key"]
 
+    final_results = dict()
+
     for core in range(1, num_cores + 1):
-        pcap_path_found = False
-        pcap_path = ""
+        final_results[core] = list()
+        for run in range(runs):
+            pcap_path_found = False
+            pcap_path = ""
 
-        for pcap in config["local_pcaps"]:
-            if int(pcap["core"]) == core:
-                pcap_path = pcap["path"]
-                pcap_path_found = True
-            
-        if not pcap_path_found:
-            print(f"No pcap path found for core: {core}")
-            continue
-
-        try:
-            client = paramiko.SSHClient()
-            k = paramiko.RSAKey.from_private_key_file(local_private_key)
-
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            for pcap in config["local_pcaps"]:
+                if int(pcap["core"]) == core:
+                    pcap_path = pcap["path"]
+                    pcap_path_found = True
+                
+            if not pcap_path_found:
+                print(f"No pcap path found for core: {core}")
+                continue
 
             try:
-                client.connect(hostname=remote_host, username=remote_user, pkey=k)
-            except Exception as e:
-                print("Failed to connect. Exit!")
-                print("*** Caught exception: %s: %s" % (e.__class__, e))
-                sys.exit(1)
+                client = paramiko.SSHClient()
+                k = paramiko.RSAKey.from_private_key_file(local_private_key)
 
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-            init_remote_client(client, remote_conntrack_path, remote_iface, core, version, duration)
-            stats_file_name = f"result_{version}_core{core}.csv"
-            pktgen_cmd = f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} \
-                           --timeout ${duration} --stats {local_iface_pci_id} \
-                           --stats-name {stats_file_name} --write-csv {pcap_path}"
+                try:
+                    client.connect(hostname=remote_host, username=remote_user, pkey=k)
+                except Exception as e:
+                    print("Failed to connect. Exit!")
+                    print("*** Caught exception: %s: %s" % (e.__class__, e))
+                    sys.exit(1)
 
-            generator_run = subprocess.run(pktgen_cmd.split())
-            print(f"The exit code was: {generator_run.returncode}")
+                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, duration)
+                stats_file_name = f"result_{version}_core{core}_run{run}.csv"
+                pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
+                            f"--timeout {duration} --stats {local_iface_pci_id} "
+                            f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
 
-            print(f"Let's check if the result file: {stats_file_name} has been created.")
+                print(f"Executing local pktgen command: {pktgen_cmd}")
+                generator_run = subprocess.run(pktgen_cmd.split())
+                print(f"The exit code was: {generator_run.returncode}")
 
-            if os.path.exists(stats_file_name):
-                print(f"File {stats_file_name} correctly created")
-            else:
-                print(f"Error during the test, file {stats_file_name} does not exist")
-        finally:
-            if client.active:
+                print(f"Let's check if the result file: {stats_file_name} has been created.")
+
+                if os.path.exists(stats_file_name):
+                    print(f"File {stats_file_name} correctly created")
+                    mpps = parse_dpdk_results(stats_file_name)
+                    final_results[core].append(mpps)
+                else:
+                    print(f"Error during the test, file {stats_file_name} does not exist")
+
+                time.sleep(30)
+            finally:
+                clean_environment(client, version, remote_iface)
                 client.close()
+
+    df = pd.DataFrame.from_dict(final_results, orient="index")
+    df.to_csv(output_filename)
 
 if __name__ == '__main__':
     main()
