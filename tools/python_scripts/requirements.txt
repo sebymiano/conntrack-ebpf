@@ -1,5 +1,7 @@
 paramiko==2.7.2
 scapy==2.4.3
 trex_stl_lib==0.3
+numpy==1.17.4
+pandas==0.25.3
 progressbar33==2.4
 PyYAML==6.0
