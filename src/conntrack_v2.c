@@ -59,16 +59,19 @@ void sigint_handler(int sig_no) {
     exit(0);
 }
 
-static void poll_stats(int map_fd, int interval, int duration) {
+static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
     unsigned int nr_cpus = libbpf_num_possible_cpus();
     struct pkt_md values[nr_cpus];
     __u64 prev[2] = {0};
     int i;
     int tot_duration = 0;
 
+    if (out_fp != NULL) {
+        fprintf(out_fp,"Seconds,Rate (Mpps),Rate (Gbps)\n");
+    }
     while (1) {
         __u32 key = 0;
-
+        float bit_rate, rate;
         sleep(interval);
 
         __u64 sum[2] = {0};
@@ -79,14 +82,21 @@ static void poll_stats(int map_fd, int interval, int duration) {
             sum[1] += values[i].bytes_cnt;
         }
         if (sum[0] > prev[0]) {
-            float rate = (sum[0] - prev[0]) / interval;
+            rate = (sum[0] - prev[0]) / interval;
             log_info("%10llu pkt/s (%.2f Mpps)", (sum[0] - prev[0]) / interval, rate / ONE_MILLION);
         }
         if (sum[1] > prev[1]) {
-            float bit_rate = ((sum[1] - prev[1]) / interval) * 8;
+            bit_rate = ((sum[1] - prev[1]) / interval) * 8;
             log_info("%10llu byte/s (%.2f Gbps)", (sum[1] - prev[1]) / interval,
                      bit_rate / ONE_BILLION);
         }
+
+        if (sum[0] > prev[0] && sum[1] > prev[1]) {
+            if (out_fp != NULL) {
+                fprintf(out_fp,"%d,%.2f,%.2f\n", tot_duration, rate, bit_rate);
+            }
+        }
+
         prev[0] = sum[0];
         prev[1] = sum[1];
         tot_duration++;
@@ -103,6 +113,7 @@ int main(int argc, const char **argv) {
     const char *if1 = NULL;
     const char *if2 = NULL;
     const char *if2_dst_mac = NULL;
+    const char *output_file = NULL;
     int metadata_map_fd;
     int duration = -1;
     int redirect_same_iface = 0;
@@ -134,8 +145,8 @@ int main(int argc, const char **argv) {
         OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
                     NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
-        // OPT_INTEGER('i', "interval", &interval, "Interval on which results
-        // will be saved into the output file", NULL, 0, 0),
+                OPT_STRING('o', "out_file", &output_file,
+                   "Save results into an output csv file", NULL, 0, 0),
         OPT_END(),
     };
 
@@ -167,6 +178,10 @@ int main(int argc, const char **argv) {
 
     if (quiet) {
         log_trace("Quiet mode is ENABLED (do NOT print and gather stats from the data plane)");
+        if (output_file != NULL) {
+            log_error("The QUIET mode is not compatible with the output file");
+            exit(1);
+        }
     } else {
         log_trace("Quiet mode is DISABLED (print and gather stats from the data plane)");
     }
@@ -326,11 +341,25 @@ int main(int argc, const char **argv) {
     log_info("Successfully started!");
 
     sleep(1);
-    poll_stats(metadata_map_fd, 1, duration);
+
+    if (output_file != NULL) {
+        FILE *out_fp = NULL;
+        out_fp = fopen(output_file, "w");
+
+        if (out_fp == NULL) {
+            log_error("Unable to open file %s", output_file);
+            goto cleanup;
+        }
+        log_debug("Results will be save into file: %s", output_file);
+        poll_stats(metadata_map_fd, 1, duration, out_fp);
+        fclose(out_fp);
+    } else {
+        poll_stats(metadata_map_fd, 1, duration, NULL);
+    }
 
 cleanup:
     cleanup_ifaces();
-    bpf_object__close(skel->obj);
     conntrack_v2_bpf__destroy(skel);
+    log_info("Program stopped correctly");
     return -err;
 }
