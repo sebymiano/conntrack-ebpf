@@ -225,7 +225,7 @@ def main():
 
                 if action == "DROP":
                     logger.debug("Going to sleep for 60s, waiting for the remote to save results")
-                    time.sleep(60)
+                    time.sleep(45)
                     copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
 
                 logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
@@ -237,7 +237,7 @@ def main():
                 else:
                     logger.error(f"Error during the test, file {stats_file_name} does not exist")
 
-                time.sleep(30)
+                time.sleep(10)
             finally:
                 clean_environment(client, version, remote_iface)
                 client.close()
