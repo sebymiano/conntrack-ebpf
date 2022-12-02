@@ -13,12 +13,17 @@ import os
 from pdfCropMargins import crop
 
 RESULTS_V1 = f'{sys.path[0]}/../data/results_100flows_v1_redir.csv'
+RESULTS_V1NS = f'{sys.path[0]}/../data/results_100flows_v1ns_redir.csv'
 RESULTS_V2 = f'{sys.path[0]}/../data/results_100flows_v2_redir.csv'
 
 def create_throughput_fig(narrow=False):
     df_v1 = pd.read_csv(RESULTS_V1)
     #Calculate mean across the different rows
     df_v1['mean'] = df_v1.iloc[:, 1:].mean(axis=1)
+
+    df_v1ns = pd.read_csv(RESULTS_V1NS)
+    #Calculate mean across the different rows
+    df_v1ns['mean'] = df_v1ns.iloc[:, 1:].mean(axis=1)
 
     df_v2 = pd.read_csv(RESULTS_V2)
     #Calculate mean across the different rows
@@ -31,8 +36,9 @@ def create_throughput_fig(narrow=False):
         fig, ax = plt.subplots(figsize=(8,5))
 
 
-    plt.plot(df_v1['Cores'], df_v1['mean'], '-s', label='Conntrack v1')
-    plt.plot(df_v2['Cores'], df_v2['mean'], '-^', label='Conntrack v2')
+    plt.plot(df_v1['Cores'], df_v1['mean'], '-s', label='v1 (shared)')
+    plt.plot(df_v1ns['Cores'], df_v1ns['mean'], '-s', label='v1 no locks')
+    plt.plot(df_v2['Cores'], df_v2['mean'], '-^', label='v2 (local)')
     
     plt.legend()
     ax.set_ylim(bottom=0)

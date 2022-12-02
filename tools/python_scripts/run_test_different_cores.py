@@ -118,10 +118,16 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         raise Exception("Error while setting core affinity")   
 
 
-def parse_dpdk_results(stats_file_name):
+def parse_dpdk_results(stats_file_name, duration):
+    if duration <= 10:
+        gap = 2
+    elif duration > 10 and duration < 30:
+        gap = 5
+    else:
+        gap = 10
     df = pd.read_csv(stats_file_name)
     # Discard 10 elements at beginning and at end
-    mpps = round(np.mean(df["RX-packets"][10:-10])/1e6, 2)
+    mpps = round(np.mean(df["RX-packets"][gap:-gap])/1e6, 2)
     return mpps
 
 
@@ -207,7 +213,7 @@ def main():
                     logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
                     sys.exit(1)
 
-                stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
+                stats_file_name = f"res_{version}_core{core}_run{run}_{action}.csv"
                 init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
 
                 if action == "DROP":
@@ -232,7 +238,8 @@ def main():
 
                 if os.path.exists(stats_file_name):
                     logger.info(f"File {stats_file_name} correctly created")
-                    mpps = parse_dpdk_results(stats_file_name)
+                    mpps = parse_dpdk_results(stats_file_name, duration)
+                    print(mpps)
                     final_results[core].append(mpps)
                 else:
                     logger.error(f"Error during the test, file {stats_file_name} does not exist")
