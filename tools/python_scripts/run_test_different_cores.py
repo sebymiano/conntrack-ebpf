@@ -25,7 +25,7 @@ ch.setFormatter(CustomFormatter())
 logger.addHandler(ch)
 
 def kill_conntrack_bin(client, version):
-    if version == "v1":
+    if version == "v1" or version == "v1ns":
         conntrack_bin_name = "conntrack"
     else:
         conntrack_bin_name = "conntrack_v2"
@@ -80,6 +80,13 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
             conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -d {new_duration} -o {stats_file_name}"
         else:    
             conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -d {new_duration}"
+    elif version == "v1ns":
+        conntrack_bin_name = "conntrack"
+        conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
+        if action == "DROP":
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -s -d {new_duration} -o {stats_file_name}"
+        else:    
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -s -q -r -d {new_duration}"
     else:
         conntrack_bin_name = "conntrack_v2"
         conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
@@ -124,7 +131,7 @@ def main():
     parser = argparse.ArgumentParser(description = desc)
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', type=str, required = True, help='Output file name')
-    parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v2'], help='v1 is for shared state, v2 is for local state')
+    parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v1ns', 'v2'], help='v1 is for shared state, v1ns is for shared state without spin locks, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, required = True, help="Max number of cores. The test will start from 1 to this value")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
     parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
@@ -175,7 +182,7 @@ def main():
 
             for pcap in config["local_pcaps"]:
                 search_core = core
-                if version == "v1":
+                if version == "v1" or version == "v1ns":
                     search_core = 1
 
                 if int(pcap["core"]) == search_core:
