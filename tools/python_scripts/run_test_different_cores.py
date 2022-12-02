@@ -46,8 +46,11 @@ def clean_environment(client, version, remote_iface):
     remove_xdp_from_iface(client, remote_iface)
 
 def copy_file_from_remote_host(client, remote_file, local_file):
+    logger.debug(f"Copy files from {remote_file} to {local_file}")
     ftp_client=client.open_sftp()
-    ftp_client.get(remote_file,local_file)
+    ftp_client.get(remote_file, local_file)
+
+    client.exec_command(f"sudo rm {remote_file}")
 
     ftp_client.close()
 
@@ -193,7 +196,7 @@ def main():
                     sys.exit(1)
 
                 stats_file_name = f"result_{version}_core{core}_run{run}.csv"
-                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name)
+                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
 
                 if action == "DROP":
                     pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
@@ -209,6 +212,8 @@ def main():
                 logger.debug(f"The exit code was: {generator_run.returncode}")
 
                 if action == "DROP":
+                    logger.debug("Going to sleep for 60s, waiting for the remote to save results")
+                    time.sleep(60)
                     copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
 
                 logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
@@ -229,7 +234,7 @@ def main():
     columns_hdr.append("Cores")
     for run in range(runs):
         columns_hdr.append(f"run #{run}")
-        
+
     df = pd.DataFrame.from_dict(final_results, orient="index", columns=columns_hdr)
     df.to_csv(output_filename)
 
