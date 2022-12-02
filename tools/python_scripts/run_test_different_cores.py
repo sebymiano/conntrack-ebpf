@@ -8,7 +8,21 @@ import subprocess
 import pandas as pd
 import numpy as np
 
+import logging
+from logger import CustomFormatter
+
 CONFIG_file_default = f"{sys.path[0]}/config_test.yaml"
+
+logger = logging.getLogger("Test_conntrack")
+logger.setLevel(logging.DEBUG)
+
+# create console handler with a higher log level
+ch = logging.StreamHandler()
+ch.setLevel(logging.DEBUG)
+
+ch.setFormatter(CustomFormatter())
+
+logger.addHandler(ch)
 
 def kill_conntrack_bin(client, version):
     if version == "v1":
@@ -31,20 +45,26 @@ def clean_environment(client, version, remote_iface):
     kill_tmux_session(client, "conntrack")
     remove_xdp_from_iface(client, remote_iface)
 
-def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, duration):
+def copy_file_from_remote_host(client, remote_file, local_file):
+    ftp_client=client.open_sftp()
+    ftp_client.get(remote_file,local_file)
+
+    ftp_client.close()
+
+def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name):
     #make sure we start from a clean environment
     clean_environment(client, version, remote_iface)
 
     _, ssh_stdout, _ = client.exec_command(f"sudo -S ethtool -L {remote_iface} combined {core}")
     if ssh_stdout.channel.recv_exit_status() == 0:
-        print(f"Changed NIC queues to {core}")
+        logger.debug(f"Changed NIC queues to {core}")
     else:
         raise Exception("Error while executing ethtool command")
 
-    print("Let's disable cstates")
+    logger.info("Let's disable cstates")
     _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
     if ssh_stdout.channel.recv_exit_status() == 0:
-        print(f"Cstates disabled")
+        logger.debug(f"Cstates disabled")
     else:
         raise Exception("Error while disabling cstates")   
 
@@ -53,16 +73,22 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
     if version == "v1":
         conntrack_bin_name = "conntrack"
         conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
-        conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -d {new_duration}"
+        if action == "DROP":
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -d {new_duration} -o {stats_file_name}"
+        else:    
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -d {new_duration}"
     else:
         conntrack_bin_name = "conntrack_v2"
         conntrack_bin = f"{remote_conntrack_path}/src/{conntrack_bin_name}"
-        conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -n {core} -d {new_duration}"
+        if action == "DROP":
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -n {core} -d {new_duration} -o {stats_file_name}"
+        else:
+            conntrack_cmd = f"{conntrack_bin} -1 {remote_iface} -p -q -r -n {core} -d {new_duration}"
 
     _, ssh_stdout, _ = client.exec_command(f"tmux new-session -d -s conntrack 'sudo {conntrack_cmd}'")
 
-    print("Command sent to remote server, let's wait until it starts")
-    print(f"Remote cmd: {conntrack_cmd}")
+    logger.info("Command sent to remote server, let's wait until it starts")
+    logger.info(f"Remote cmd: {conntrack_cmd}")
     time.sleep(30)
     
     _, ssh_stdout, _ = client.exec_command(f"pgrep {conntrack_bin_name}")
@@ -70,13 +96,13 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
     if not cmd_output:
         raise Exception("Conntrack command not executed successfully")
     else:
-        print("Conntrack command executed successfully")
+        logger.debug("Conntrack command executed successfully")
 
 
-    print("Let's now set the core affinity")
+    logger.info("Let's now set the core affinity")
     _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_irq_affinity.sh local {remote_iface}")
     if ssh_stdout.channel.recv_exit_status() == 0:
-        print(f"Set correct core affinity")
+        logger.debug(f"Set correct core affinity")
     else:
         kill_tmux_session(client, "conntrack")
         raise Exception("Error while setting core affinity")   
@@ -99,6 +125,7 @@ def main():
     parser.add_argument("-n", "--num-cores", type=int, required = True, help="Max number of cores. The test will start from 1 to this value")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
     parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
+    parser.add_argument("-a", '--action', default='REDIR', const='REDIR', nargs='?', choices=['REDIR', 'DROP'], help='REDIR is to redirect packets on the same iface, DROP is to drop all pkts')
 
     args = parser.parse_args()
 
@@ -110,7 +137,7 @@ def main():
         try:
             config = yaml.safe_load(stream)
         except yaml.YAMLError as exc:
-            print(exc)
+            logger.critical(exc)
             sys.exit(-1)
 
     version = args.version
@@ -118,6 +145,7 @@ def main():
     duration = args.duration
     runs = args.runs
     output_filename = args.out
+    action = args.action
 
     remote_host = config["remote_host"]
     remote_user = config["remote_user"]
@@ -127,9 +155,9 @@ def main():
     local_numa_core = config["local_numa_core"]
 
     if ("local_private_key" not in config) or (not config["local_private_key"]):
-        print("The YAML file does not provide any private key.")
+        logger.warning("The YAML file does not provide any private key.")
         default_path = os.path.join(os.environ["HOME"], ".ssh", "id_rsa")
-        print(f"I'll use the default key from: {default_path}")
+        logger.info(f"I'll use the default key from: {default_path}")
         local_private_key = default_path
     else:
         local_private_key = config["local_private_key"]
@@ -148,7 +176,7 @@ def main():
                     pcap_path_found = True
                 
             if not pcap_path_found:
-                print(f"No pcap path found for core: {core}")
+                logger.error(f"No pcap path found for core: {core}")
                 continue
 
             try:
@@ -160,35 +188,49 @@ def main():
                 try:
                     client.connect(hostname=remote_host, username=remote_user, pkey=k)
                 except Exception as e:
-                    print("Failed to connect. Exit!")
-                    print("*** Caught exception: %s: %s" % (e.__class__, e))
+                    logger.critical("Failed to connect. Exit!")
+                    logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
                     sys.exit(1)
 
-                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, duration)
                 stats_file_name = f"result_{version}_core{core}_run{run}.csv"
-                pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
-                            f"--timeout {duration} --stats {local_iface_pci_id} "
-                            f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
+                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name)
 
-                print(f"Executing local pktgen command: {pktgen_cmd}")
+                if action == "DROP":
+                    pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
+                                  f"--timeout {duration} --stats {local_iface_pci_id} "
+                                  f"{pcap_path} {local_iface_pci_id}")
+                else:
+                    pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
+                                  f"--timeout {duration} --stats {local_iface_pci_id} "
+                                  f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
+
+                logger.debug(f"Executing local pktgen command: {pktgen_cmd}")
                 generator_run = subprocess.run(pktgen_cmd.split())
-                print(f"The exit code was: {generator_run.returncode}")
+                logger.debug(f"The exit code was: {generator_run.returncode}")
 
-                print(f"Let's check if the result file: {stats_file_name} has been created.")
+                if action == "DROP":
+                    copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
+
+                logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
 
                 if os.path.exists(stats_file_name):
-                    print(f"File {stats_file_name} correctly created")
+                    logger.info(f"File {stats_file_name} correctly created")
                     mpps = parse_dpdk_results(stats_file_name)
                     final_results[core].append(mpps)
                 else:
-                    print(f"Error during the test, file {stats_file_name} does not exist")
+                    logger.error(f"Error during the test, file {stats_file_name} does not exist")
 
                 time.sleep(30)
             finally:
                 clean_environment(client, version, remote_iface)
                 client.close()
 
-    df = pd.DataFrame.from_dict(final_results, orient="index")
+    columns_hdr = list()
+    columns_hdr.append("Cores")
+    for run in range(runs):
+        columns_hdr.append(f"run #{run}")
+        
+    df = pd.DataFrame.from_dict(final_results, orient="index", columns=columns_hdr)
     df.to_csv(output_filename)
 
 if __name__ == '__main__':
