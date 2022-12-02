@@ -174,9 +174,14 @@ def main():
             pcap_path = ""
 
             for pcap in config["local_pcaps"]:
-                if int(pcap["core"]) == core:
+                search_core = core
+                if version == "v1":
+                    search_core = 1
+
+                if int(pcap["core"]) == search_core:
                     pcap_path = pcap["path"]
                     pcap_path_found = True
+                    break
                 
             if not pcap_path_found:
                 logger.error(f"No pcap path found for core: {core}")
