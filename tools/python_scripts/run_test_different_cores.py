@@ -231,12 +231,13 @@ def main():
                 client.close()
 
     columns_hdr = list()
-    columns_hdr.append("Cores")
     for run in range(runs):
         columns_hdr.append(f"run #{run}")
 
+    print(final_results)
+
     df = pd.DataFrame.from_dict(final_results, orient="index", columns=columns_hdr)
-    df.to_csv(output_filename)
+    df.to_csv(output_filename, index=True, index_label="Cores")
 
 if __name__ == '__main__':
     main()
