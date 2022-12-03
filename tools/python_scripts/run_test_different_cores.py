@@ -122,6 +122,15 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         raise Exception("Error while setting core affinity")   
 
 
+def start_prog_profile(client, profile, bpf_prog_name, profile_path, duration, sleep_timeout):
+    if profile == "BPFTOOL":
+        profile_cmd = f"sleep {sleep_timeout} && bpftool --json --pretty prog profile name {bpf_prog_name} duration {duration} cycles instructions llc_misses dtlb_misses > {profile_path}"
+    else:
+        raise Exception(f"Profile type {profile} not currently supported")  
+
+    logger.debug(f"Running BPF profile with cmd: {profile_cmd}")
+    client.exec_command(f"{profile_cmd}")
+
 def parse_dpdk_results(stats_file_name, duration):
     if duration <= 10:
         gap = 2
@@ -146,6 +155,7 @@ def main():
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
     parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
     parser.add_argument("-a", '--action', default='REDIR', const='REDIR', nargs='?', choices=['REDIR', 'DROP'], help='REDIR is to redirect packets on the same iface, DROP is to drop all pkts')
+    parser.add_argument("-p", '--profile', default='NONE', const='NONE', nargs='?', choices=['NONE', 'BPFTOOL', 'PERF'], help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
 
     args = parser.parse_args()
 
@@ -166,6 +176,10 @@ def main():
     runs = args.runs
     output_filename = args.out
     action = args.action
+    profile = args.profile
+
+    if duration < 30:
+        logger.warning("Duration of the test is too short. Test might not work properly")
 
     remote_host = config["remote_host"]
     remote_user = config["remote_user"]
@@ -173,6 +187,7 @@ def main():
     remote_iface = config["remote_iface"]
     local_iface_pci_id = config["local_iface_pci_id"]
     local_numa_core = config["local_numa_core"]
+    remote_bpf_prog_name = config["remote_bpf_prog_name"]
 
     if ("local_private_key" not in config) or (not config["local_private_key"]):
         logger.warning("The YAML file does not provide any private key.")
@@ -226,8 +241,8 @@ def main():
                     logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
                     sys.exit(1)
 
-                stats_file_name = f"res_{version}_core{core}_run{run}_{action}.csv"
-                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
+                stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
+                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", profile)
 
                 if action == "DROP":
                     pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
@@ -238,6 +253,11 @@ def main():
                                   f"--timeout {duration} --stats {local_iface_pci_id} "
                                   f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
 
+                if profile != "NONE":
+                    profile_name = f"result_{version}_core{core}_run{run}_{action}_profile.json"
+                    profile_path = f"{remote_conntrack_path}/src/{profile_name}"
+                    start_prog_profile(client, profile, remote_bpf_prog_name, profile_path, duration - 10, 10)
+
                 logger.debug(f"Executing local pktgen command: {pktgen_cmd}")
                 generator_run = subprocess.run(pktgen_cmd.split())
                 logger.debug(f"The exit code was: {generator_run.returncode}")
@@ -247,12 +267,20 @@ def main():
                     time.sleep(45)
                     copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
 
+                if profile != "NONE":
+                    copy_file_from_remote_host(client, f"{profile_path}", f"{sys.path[0]}/{profile_name}")
+                    logger.debug(f"Let's check if the result file: {profile_name} has been created.")
+                    if os.path.exists(profile_name):
+                        logger.info(f"File {profile_name} correctly created")
+                        shutil.move(f"{profile_name}", os.path.join(raw_test_dir, profile_name))
+                    else:
+                        logger.error(f"Error during the test, file {profile_name} does not exist")
+
                 logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
 
                 if os.path.exists(stats_file_name):
                     logger.info(f"File {stats_file_name} correctly created")
                     mpps = parse_dpdk_results(stats_file_name, duration)
-                    print(mpps)
                     final_results[core].append(mpps)
                     shutil.move(f"{stats_file_name}", os.path.join(raw_test_dir, stats_file_name))
                 else:

@@ -3,6 +3,7 @@
  remote_user: "user"
  remote_conntrack_path: "~/conntrack-ebpf"
  remote_iface: "eth0"
+ remote_bpf_prog_name: "xdp_conntrack_prog"
  #local_private_key: "/home/user/.ssh/id_rsa"
  local_iface_pci_id: "0000:3b:00.0"
  local_numa_core: 0
