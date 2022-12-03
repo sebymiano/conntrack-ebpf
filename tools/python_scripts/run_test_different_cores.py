@@ -124,7 +124,7 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
 
 def start_prog_profile(client, profile, bpf_prog_name, profile_path, duration, sleep_timeout):
     if profile == "BPFTOOL":
-        profile_cmd = f"sleep {sleep_timeout} && bpftool --json --pretty prog profile name {bpf_prog_name} duration {duration} cycles instructions llc_misses dtlb_misses > {profile_path}"
+        profile_cmd = f"sleep {sleep_timeout} && sudo bpftool --json --pretty prog profile name {bpf_prog_name} duration {duration} cycles instructions llc_misses dtlb_misses > {profile_path}"
     else:
         raise Exception(f"Profile type {profile} not currently supported")  
 
