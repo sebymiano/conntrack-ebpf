@@ -242,7 +242,7 @@ def main():
                     sys.exit(1)
 
                 stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
-                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", profile)
+                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
 
                 if action == "DROP":
                     pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
