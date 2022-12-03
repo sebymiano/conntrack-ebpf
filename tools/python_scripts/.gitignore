@@ -1,4 +1,7 @@
 *.pcap
 *.csv
 !data/*
+*.yaml
+!config_test.yaml
+!config.yaml
 __pycache__/

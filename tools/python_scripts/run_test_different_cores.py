@@ -7,6 +7,10 @@ import time
 import subprocess
 import pandas as pd
 import numpy as np
+import errno
+import os
+from datetime import datetime
+import shutil
 
 import logging
 from logger import CustomFormatter
@@ -180,6 +184,15 @@ def main():
 
     final_results = dict()
 
+    raw_test_dir = os.path.join(
+        os.getcwd(), 
+        datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+    try:
+        os.makedirs(raw_test_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise  # This was not a "directory exist" error..
+
     for core in range(1, num_cores + 1):
         final_results[core] = list()
         for run in range(runs):
@@ -241,6 +254,7 @@ def main():
                     mpps = parse_dpdk_results(stats_file_name, duration)
                     print(mpps)
                     final_results[core].append(mpps)
+                    shutil.move(f"{stats_file_name}", os.path.join(raw_test_dir, stats_file_name))
                 else:
                     logger.error(f"Error during the test, file {stats_file_name} does not exist")
 
