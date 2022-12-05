@@ -1,6 +1,7 @@
 *.pcap
 *.csv
-!data/*
+!data/perf/bpftool/*
+!data/throughput/*
 *.yaml
 !config_test.yaml
 !config.yaml

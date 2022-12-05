@@ -11,6 +11,7 @@ import errno
 import os
 from datetime import datetime
 import shutil
+import json
 
 import logging
 from logger import CustomFormatter
@@ -143,6 +144,17 @@ def parse_dpdk_results(stats_file_name, duration):
     mpps = round(np.mean(df["RX-packets"][gap:-gap])/1e6, 2)
     return mpps
 
+def parse_perf_results(profile_name):
+    with open(profile_name, 'r') as f:
+        results = dict()
+        data = json.load(f)
+
+        for v in data:
+            results[v["metric"]] = dict()
+            results[v["metric"]]["run_cnt"] = v["run_cnt"]
+            results[v["metric"]]["value"] = v["value"]
+    
+    return results
 
 def main():
     desc = """Run test for conntrack_bpf with different number of cores"""
@@ -197,11 +209,12 @@ def main():
     else:
         local_private_key = config["local_private_key"]
 
-    final_results = dict()
+    final_results_tput = dict()
+    final_results_perf = dict()
 
     raw_test_dir = os.path.join(
         os.getcwd(), 
-        datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+        datetime.now().strftime(f'{os.path.splitext(output_filename)[0]}-%Y-%m-%d_%H-%M-%S'))
     try:
         os.makedirs(raw_test_dir)
     except OSError as e:
@@ -209,7 +222,8 @@ def main():
             raise  # This was not a "directory exist" error..
 
     for core in range(1, num_cores + 1):
-        final_results[core] = list()
+        final_results_tput[core] = list()
+        final_results_perf[core] = list()
         for run in range(runs):
             pcap_path_found = False
             pcap_path = ""
@@ -272,6 +286,8 @@ def main():
                     logger.debug(f"Let's check if the result file: {profile_name} has been created.")
                     if os.path.exists(profile_name):
                         logger.info(f"File {profile_name} correctly created")
+                        res = parse_perf_results(profile_name)
+                        final_results_perf[core].append(res)
                         shutil.move(f"{profile_name}", os.path.join(raw_test_dir, profile_name))
                     else:
                         logger.error(f"Error during the test, file {profile_name} does not exist")
@@ -281,7 +297,7 @@ def main():
                 if os.path.exists(stats_file_name):
                     logger.info(f"File {stats_file_name} correctly created")
                     mpps = parse_dpdk_results(stats_file_name, duration)
-                    final_results[core].append(mpps)
+                    final_results_tput[core].append(mpps)
                     shutil.move(f"{stats_file_name}", os.path.join(raw_test_dir, stats_file_name))
                 else:
                     logger.error(f"Error during the test, file {stats_file_name} does not exist")
@@ -295,10 +311,17 @@ def main():
     for run in range(runs):
         columns_hdr.append(f"run #{run}")
 
-    print(final_results)
+    print(final_results_tput)
 
-    df = pd.DataFrame.from_dict(final_results, orient="index", columns=columns_hdr)
+    df = pd.DataFrame.from_dict(final_results_tput, orient="index", columns=columns_hdr)
     df.to_csv(output_filename, index=True, index_label="Cores")
+    shutil.move(f"{output_filename}", os.path.join(raw_test_dir, output_filename))
+
+    if profile != "NONE":
+        perf_file_name= os.path.splitext(output_filename)[0] + "_bpftool.perf.yaml"
+        with open(perf_file_name, 'w') as outfile:
+            yaml.dump(final_results_perf, outfile, default_flow_style=False)
+        shutil.move(f"{perf_file_name}", os.path.join(raw_test_dir, perf_file_name))
 
 if __name__ == '__main__':
     main()

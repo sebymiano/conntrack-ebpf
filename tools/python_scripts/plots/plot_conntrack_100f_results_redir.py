@@ -12,9 +12,9 @@ import os
 
 from pdfCropMargins import crop
 
-RESULTS_V1 = f'{sys.path[0]}/../data/results_100flows_v1_redir.csv'
-RESULTS_V1NS = f'{sys.path[0]}/../data/results_100flows_v1ns_redir.csv'
-RESULTS_V2 = f'{sys.path[0]}/../data/results_100flows_v2_redir.csv'
+RESULTS_V1 = f'{sys.path[0]}/../data/throughput/results_100flows_v1_redir.csv'
+RESULTS_V1NS = f'{sys.path[0]}/../data/throughput/results_100flows_v1ns_redir.csv'
+RESULTS_V2 = f'{sys.path[0]}/../data/throughput/results_100flows_v2_redir.csv'
 
 def create_throughput_fig(narrow=False):
     df_v1 = pd.read_csv(RESULTS_V1)
