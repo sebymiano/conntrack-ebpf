@@ -49,6 +49,7 @@ def clean_environment(client, version, remote_iface):
     kill_conntrack_bin(client, version)
     kill_tmux_session(client, "conntrack")
     remove_xdp_from_iface(client, remote_iface)
+    client.exec_command(f"sudo sysctl -w kernel.bpf_stats_enabled=0")
 
 def copy_file_from_remote_host(client, remote_file, local_file):
     logger.debug(f"Copy files from {remote_file} to {local_file}")
@@ -126,6 +127,9 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
 def start_prog_profile(client, profile, bpf_prog_name, profile_path, duration, sleep_timeout):
     if profile == "BPFTOOL":
         profile_cmd = f"sleep {sleep_timeout} && sudo bpftool --json --pretty prog profile name {bpf_prog_name} duration {duration} cycles instructions llc_misses dtlb_misses > {profile_path}"
+    elif profile == "BPF_STATS":
+        client.exec_command(f"sudo sysctl -w kernel.bpf_stats_enabled=1")
+        profile_cmd = f"sleep {duration} && sudo bpftool prog list name {bpf_prog_name} --json --pretty > {profile_path}; sudo sysctl -w kernel.bpf_stats_enabled=0"
     else:
         raise Exception(f"Profile type {profile} not currently supported")  
 
@@ -144,15 +148,20 @@ def parse_dpdk_results(stats_file_name, duration):
     mpps = round(np.mean(df["RX-packets"][gap:-gap])/1e6, 2)
     return mpps
 
-def parse_perf_results(profile_name):
+def parse_perf_results(profile, profile_name):
     with open(profile_name, 'r') as f:
         results = dict()
         data = json.load(f)
-
-        for v in data:
-            results[v["metric"]] = dict()
-            results[v["metric"]]["run_cnt"] = v["run_cnt"]
-            results[v["metric"]]["value"] = v["value"]
+        if profile == "BPFTOOL":
+            for v in data:
+                results[v["metric"]] = dict()
+                results[v["metric"]]["run_cnt"] = v["run_cnt"]
+                results[v["metric"]]["value"] = v["value"]
+        elif profile == "BPF_STATS":
+            results["run_time_ns"] = data["run_time_ns"]
+            results["run_cnt"] = data["run_cnt"]
+        else:
+            raise Exception(f"Profile type {profile} not currently supported")
     
     return results
 
@@ -162,12 +171,13 @@ def main():
     parser = argparse.ArgumentParser(description = desc)
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', type=str, required = True, help='Output file name')
+    parser.add_argument('--out-dir', type=str, help='Directory where to place results')
     parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v1ns', 'v2'], help='v1 is for shared state, v1ns is for shared state without spin locks, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, required = True, help="Max number of cores. The test will start from 1 to this value")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
     parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
     parser.add_argument("-a", '--action', default='REDIR', const='REDIR', nargs='?', choices=['REDIR', 'DROP'], help='REDIR is to redirect packets on the same iface, DROP is to drop all pkts')
-    parser.add_argument("-p", '--profile', default='NONE', const='NONE', nargs='?', choices=['NONE', 'BPFTOOL', 'PERF'], help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
+    parser.add_argument("-p", '--profiles', nargs='?', choices=['NONE', 'BPFTOOL', 'BPF_STATS', 'PERF'], action='append', help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
 
     args = parser.parse_args()
 
@@ -188,7 +198,12 @@ def main():
     runs = args.runs
     output_filename = args.out
     action = args.action
-    profile = args.profile
+    profiles = args.profiles
+    out_dir = args.out_dir
+
+    if profiles is None:
+        profiles = list()
+        profiles.append("NONE")
 
     if duration < 30:
         logger.warning("Duration of the test is too short. Test might not work properly")
@@ -212,100 +227,108 @@ def main():
     final_results_tput = dict()
     final_results_perf = dict()
 
-    raw_test_dir = os.path.join(
-        os.getcwd(), 
-        datetime.now().strftime(f'{os.path.splitext(output_filename)[0]}-%Y-%m-%d_%H-%M-%S'))
+    if not out_dir:
+        out_dir = os.path.join(
+            os.getcwd(), 
+            datetime.now().strftime(f'{os.path.splitext(output_filename)[0]}-%Y-%m-%d_%H-%M-%S'))
+    raw_test_dir = os.path.join(out_dir, "raw")
     try:
         os.makedirs(raw_test_dir)
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise  # This was not a "directory exist" error..
 
-    for core in range(1, num_cores + 1):
-        final_results_tput[core] = list()
-        final_results_perf[core] = list()
-        for run in range(runs):
-            pcap_path_found = False
-            pcap_path = ""
+    for profile in profiles:
+        final_results_perf[profile] = dict()
+        for core in range(1, num_cores + 1):
+            final_results_tput[core] = list()
+            final_results_perf[profile][core] = list()
+            for run in range(runs):
+                pcap_path_found = False
+                pcap_path = ""
 
-            for pcap in config["local_pcaps"]:
-                search_core = core
-                if version == "v1" or version == "v1ns":
-                    search_core = 1
+                for pcap in config["local_pcaps"]:
+                    search_core = core
+                    if version == "v1" or version == "v1ns":
+                        search_core = 1
 
-                if int(pcap["core"]) == search_core:
-                    pcap_path = pcap["path"]
-                    pcap_path_found = True
-                    break
-                
-            if not pcap_path_found:
-                logger.error(f"No pcap path found for core: {core}")
-                continue
-
-            try:
-                client = paramiko.SSHClient()
-                k = paramiko.RSAKey.from_private_key_file(local_private_key)
-
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    if int(pcap["core"]) == search_core:
+                        pcap_path = pcap["path"]
+                        pcap_path_found = True
+                        break
+                    
+                if not pcap_path_found:
+                    logger.error(f"No pcap path found for core: {core}")
+                    continue
 
                 try:
-                    client.connect(hostname=remote_host, username=remote_user, pkey=k)
-                except Exception as e:
-                    logger.critical("Failed to connect. Exit!")
-                    logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
-                    sys.exit(1)
+                    client = paramiko.SSHClient()
+                    k = paramiko.RSAKey.from_private_key_file(local_private_key)
 
-                stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
-                init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
+                    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-                if action == "DROP":
-                    pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
-                                  f"--timeout {duration} --stats {local_iface_pci_id} "
-                                  f"{pcap_path} {local_iface_pci_id}")
-                else:
-                    pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
-                                  f"--timeout {duration} --stats {local_iface_pci_id} "
-                                  f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
+                    try:
+                        client.connect(hostname=remote_host, username=remote_user, pkey=k)
+                    except Exception as e:
+                        logger.critical("Failed to connect. Exit!")
+                        logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
+                        sys.exit(1)
 
-                if profile != "NONE":
-                    profile_name = f"result_{version}_core{core}_run{run}_{action}_profile.json"
-                    profile_path = f"{remote_conntrack_path}/src/{profile_name}"
-                    start_prog_profile(client, profile, remote_bpf_prog_name, profile_path, duration - 10, 10)
+                    stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
+                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
 
-                logger.debug(f"Executing local pktgen command: {pktgen_cmd}")
-                generator_run = subprocess.run(pktgen_cmd.split())
-                logger.debug(f"The exit code was: {generator_run.returncode}")
-
-                if action == "DROP":
-                    logger.debug("Going to sleep for 60s, waiting for the remote to save results")
-                    time.sleep(45)
-                    copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
-
-                if profile != "NONE":
-                    copy_file_from_remote_host(client, f"{profile_path}", f"{sys.path[0]}/{profile_name}")
-                    logger.debug(f"Let's check if the result file: {profile_name} has been created.")
-                    if os.path.exists(profile_name):
-                        logger.info(f"File {profile_name} correctly created")
-                        res = parse_perf_results(profile_name)
-                        final_results_perf[core].append(res)
-                        shutil.move(f"{profile_name}", os.path.join(raw_test_dir, profile_name))
+                    if action == "DROP":
+                        pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
+                                    f"--timeout {duration} --stats {local_iface_pci_id} "
+                                    f"{pcap_path} {local_iface_pci_id}")
                     else:
-                        logger.error(f"Error during the test, file {profile_name} does not exist")
+                        pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
+                                    f"--timeout {duration} --stats {local_iface_pci_id} "
+                                    f"--stats-name {stats_file_name} --write-csv {pcap_path} {local_iface_pci_id}")
 
-                logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
+                    if profile == "BPFTOOL":
+                        profile_name = f"result_{version}_core{core}_run{run}_{action}_profile_{profile}.json"
+                        profile_path = f"{remote_conntrack_path}/src/{profile_name}"
+                        start_prog_profile(client, profile, remote_bpf_prog_name, profile_path, duration - 10, 10)
+                    elif profile == "BPF_STATS":
+                        profile_name = f"result_{version}_core{core}_run{run}_{action}_profile_{profile}.txt"
+                        profile_path = f"{remote_conntrack_path}/src/{profile_name}"
+                        start_prog_profile(client, profile, remote_bpf_prog_name, profile_path, duration - 10, 10)
 
-                if os.path.exists(stats_file_name):
-                    logger.info(f"File {stats_file_name} correctly created")
-                    mpps = parse_dpdk_results(stats_file_name, duration)
-                    final_results_tput[core].append(mpps)
-                    shutil.move(f"{stats_file_name}", os.path.join(raw_test_dir, stats_file_name))
-                else:
-                    logger.error(f"Error during the test, file {stats_file_name} does not exist")
+                    logger.debug(f"Executing local pktgen command: {pktgen_cmd}")
+                    generator_run = subprocess.run(pktgen_cmd.split())
+                    logger.debug(f"The exit code was: {generator_run.returncode}")
 
-                time.sleep(10)
-            finally:
-                clean_environment(client, version, remote_iface)
-                client.close()
+                    if action == "DROP":
+                        logger.debug("Going to sleep for 60s, waiting for the remote to save results")
+                        time.sleep(45)
+                        copy_file_from_remote_host(client, f"{remote_conntrack_path}/src/{stats_file_name}", f"{sys.path[0]}/{stats_file_name}")
+
+                    if profile != "NONE":
+                        copy_file_from_remote_host(client, f"{profile_path}", f"{sys.path[0]}/{profile_name}")
+                        logger.debug(f"Let's check if the result file: {profile_name} has been created.")
+                        if os.path.exists(profile_name):
+                            logger.info(f"File {profile_name} correctly created")
+                            res = parse_perf_results(profile, profile_name)
+                            final_results_perf[profile][core].append(res)
+                            shutil.move(f"{profile_name}", os.path.join(raw_test_dir, profile_name))
+                        else:
+                            logger.error(f"Error during the test, file {profile_name} does not exist")
+
+                    logger.debug(f"Let's check if the result file: {stats_file_name} has been created.")
+
+                    if os.path.exists(stats_file_name):
+                        logger.info(f"File {stats_file_name} correctly created")
+                        mpps = parse_dpdk_results(stats_file_name, duration)
+                        final_results_tput[core].append(mpps)
+                        shutil.move(f"{stats_file_name}", os.path.join(raw_test_dir, stats_file_name))
+                    else:
+                        logger.error(f"Error during the test, file {stats_file_name} does not exist")
+
+                    time.sleep(10)
+                finally:
+                    clean_environment(client, version, remote_iface)
+                    client.close()
 
     columns_hdr = list()
     for run in range(runs):
@@ -315,13 +338,13 @@ def main():
 
     df = pd.DataFrame.from_dict(final_results_tput, orient="index", columns=columns_hdr)
     df.to_csv(output_filename, index=True, index_label="Cores")
-    shutil.move(f"{output_filename}", os.path.join(raw_test_dir, output_filename))
+    shutil.move(f"{output_filename}", os.path.join(out_dir, output_filename))
 
-    if profile != "NONE":
-        perf_file_name= os.path.splitext(output_filename)[0] + "_bpftool.perf.yaml"
+    if len(profiles) > 0 and args.profiles is not None:
+        perf_file_name= os.path.splitext(output_filename)[0] + f".perf.yaml"
         with open(perf_file_name, 'w') as outfile:
             yaml.dump(final_results_perf, outfile, default_flow_style=False)
-        shutil.move(f"{perf_file_name}", os.path.join(raw_test_dir, perf_file_name))
+        shutil.move(f"{perf_file_name}", os.path.join(out_dir, perf_file_name))
 
 if __name__ == '__main__':
     main()
