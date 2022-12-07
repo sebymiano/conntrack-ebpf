@@ -1,8 +1,10 @@
 *.pcap
 *.csv
-!data/perf/bpftool/*
-!data/throughput/*
 *.yaml
+!data/perf/*.csv
+!data/perf/*.yaml
+!data/throughput/*
 !config_test.yaml
 !config.yaml
 __pycache__/
+raw_data
