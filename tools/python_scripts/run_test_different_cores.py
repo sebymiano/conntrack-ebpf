@@ -45,10 +45,16 @@ def remove_xdp_from_iface(client, iface):
     _, ssh_stdout, _ = client.exec_command(f"sudo ip link set {iface} xdp off")
     return ssh_stdout.channel.recv_exit_status()
 
-def clean_environment(client, version, remote_iface):
+def delete_rss_rules(client, iface, remote_conntrack_path):
+    _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/delete-rss-rules.sh")
+    return ssh_stdout.channel.recv_exit_status()
+
+def clean_environment(client, version, remote_iface, use_mac_for_rss, remote_conntrack_path):
     kill_conntrack_bin(client, version)
     kill_tmux_session(client, "conntrack")
     remove_xdp_from_iface(client, remote_iface)
+    if use_mac_for_rss:
+        delete_rss_rules(client, remote_iface, remote_conntrack_path)
     client.exec_command(f"sudo sysctl -w kernel.bpf_stats_enabled=0")
 
 def copy_file_from_remote_host(client, remote_file, local_file):
@@ -62,7 +68,7 @@ def copy_file_from_remote_host(client, remote_file, local_file):
 
 def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac, disable_ht, disable_cstates):
     #make sure we start from a clean environment
-    clean_environment(client, version, remote_iface)
+    clean_environment(client, version, remote_iface, use_mac_for_rss, remote_conntrack_path)
 
     if not use_mac_for_rss:
         _, ssh_stdout, _ = client.exec_command(f"sudo -S ethtool -L {remote_iface} combined {core}")
@@ -358,7 +364,7 @@ def main():
                 except Exception as e:
                     logger.critical(e)
                 finally:
-                    clean_environment(client, version, remote_iface)
+                    clean_environment(client, version, remote_iface, use_mac_for_rss, remote_conntrack_path)
                     client.close()
 
     columns_hdr = list()
