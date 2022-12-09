@@ -48,12 +48,18 @@ function install_linux_bpftool {
 
 $SUDO apt update
 PACKAGES=""
-PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev zlibc libssl-dev libbfd-dev libpcap-dev libcap-dev"
+PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev libssl-dev libbfd-dev libpcap-dev libcap-dev"
 PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime g++-multilib"
 PACKAGES+=" pkg-config net-tools bash tcpreplay gnupg gnupg2 gpgv2 curl flex bison" # utility libraries
 PACKAGES+=" libnl-3-dev clang python3-pip gnupg2" 
 
 $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq $PACKAGES"
+
+
+CURRENT_UBUNTU_VERSION=$(lsb_release -rs)
+if [[ "${CURRENT_UBUNTU_VERSION}" == "20.04" ]]; then
+  $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq zlibc"
+fi
 
 
 pushd .
