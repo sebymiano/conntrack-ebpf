@@ -606,6 +606,7 @@ are coded in the script file itself."""
         if use_mac_for_rss:
             new_mac = change_mac(mac_del_colons(server_mac), i % num_cores)
             curr_pkt[Ether].dst = mac_add_colons(new_mac)
+            curr_pkt[Ether].src = client_mac
 
         pcap.write(curr_pkt)
     print("")
