@@ -1,4 +1,4 @@
-paramiko==2.7.2
+paramiko==2.12.0
 scapy==2.4.3
 trex_stl_lib==0.3
 numpy
