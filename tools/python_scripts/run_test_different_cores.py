@@ -60,7 +60,7 @@ def copy_file_from_remote_host(client, remote_file, local_file):
 
     ftp_client.close()
 
-def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac):
+def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac, disable_ht):
     #make sure we start from a clean environment
     clean_environment(client, version, remote_iface)
 
@@ -75,14 +75,21 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         if ssh_stdout.channel.recv_exit_status() == 0:
             logger.debug(f"Set RSS for {core} cores")
         else:
-            raise Exception("Error while executing set_rss_mac.sh command")
+            raise Exception("Error while executing set_rss_mac.sh script")
+
+    if disable_ht:
+        _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/disable_ht.sh 1")
+        if ssh_stdout.channel.recv_exit_status() == 0:
+            logger.debug(f"Hyper threading disabled")
+        else:
+            raise Exception("Error while executing disable_ht.sh script")
 
     logger.info("Let's disable cstates")
     _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
     if ssh_stdout.channel.recv_exit_status() == 0:
         logger.debug(f"Cstates disabled")
     else:
-        raise Exception("Error while executing set_cpu_frequency.sh command")   
+        raise Exception("Error while executing set_cpu_frequency.sh script")   
 
     # Adding 60 seconds to make sure the system will setup everything before closing the test
     new_duration = duration + 60
@@ -186,6 +193,7 @@ def main():
     parser.add_argument("-a", '--action', default='REDIR', const='REDIR', nargs='?', choices=['REDIR', 'DROP'], help='REDIR is to redirect packets on the same iface, DROP is to drop all pkts')
     parser.add_argument("-p", '--profiles', nargs='?', choices=['NONE', 'BPFTOOL', 'BPF_STATS', 'PERF'], action='append', help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
     parser.add_argument('-m', '--mac-rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
+    parser.add_argument('--disable-ht', action='store_true', help="Disable Hyper-Threading")
 
     args = parser.parse_args()
 
@@ -209,6 +217,7 @@ def main():
     profiles = args.profiles
     out_dir = args.out_dir
     use_mac_for_rss = args.mac_rss
+    disable_ht = args.disable_ht
 
     if profiles is None:
         profiles = list()
@@ -281,7 +290,7 @@ def main():
                         sys.exit(1)
 
                     stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
-                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac)
+                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac, disable_ht)
 
                     if action == "DROP":
                         pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
