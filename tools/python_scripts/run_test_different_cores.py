@@ -342,6 +342,8 @@ def main():
                         logger.error(f"Error during the test, file {stats_file_name} does not exist")
 
                     time.sleep(10)
+                except Exception as e:
+                    logger.critical(e)
                 finally:
                     clean_environment(client, version, remote_iface)
                     client.close()
