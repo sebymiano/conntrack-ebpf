@@ -46,7 +46,7 @@ while [ "$core" -lt "$cores" ]
 do
   if [ "$core" -ne "0" ]; then
     mac=$(echo $mac_address | tr -d ':')
-    macadd=$(( 0x$mac + 1 ))
+    macadd=$(( 0x$mac + $core ))
     macnew=$(printf "%012x" $macadd | sed 's/../&:/g;s/:$//')
   else
     macnew=$mac_address
