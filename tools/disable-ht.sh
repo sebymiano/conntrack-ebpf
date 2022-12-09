@@ -24,3 +24,5 @@ for i in /sys/devices/system/cpu/cpu[0-9]*; do
     echo "switched ${i}/online to $((1-$1))"
   fi
 done
+
+exit 0

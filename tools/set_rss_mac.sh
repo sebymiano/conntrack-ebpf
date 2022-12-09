@@ -51,3 +51,5 @@ do
 
   let "core++"
 done
+
+exit 0
