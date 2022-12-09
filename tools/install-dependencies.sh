@@ -24,11 +24,11 @@ function install_linux_bpftool {
   fi
 
   sudo rm -rf "${DIR}/deps"
+  mkdir -p "${DIR}/deps"
 
-  # If we reach this point, we need to install perf manually
-  # Let's start by downloading the kernel
-  chmod +x ${KERNEL_DOWNLOAD_SCRIPT}
-  ${KERNEL_DOWNLOAD_SCRIPT} ${BPFTOOL_VERSION}
+  pushd .
+  cd "${DIR}/deps"
+  git clone --recurse-submodules https://github.com/libbpf/bpftool.git
 
   if [ $? -ne 0 ]; then
     echo -e "${COLOR_RED} Unable to install Linux bpftool v${BPFTOOL_VERSION} ${COLOR_OFF}"
@@ -36,8 +36,7 @@ function install_linux_bpftool {
     return
   fi
 
-  pushd .
-  cd $DIR/deps/linux/tools/bpf/bpftool
+  cd bpftool
   make -j "$(getconf _NPROCESSORS_ONLN)"
   $SUDO make install
   popd
@@ -52,7 +51,7 @@ PACKAGES=""
 PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev zlibc libssl-dev libbfd-dev libpcap-dev libcap-dev"
 PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime g++-multilib"
 PACKAGES+=" pkg-config net-tools bash tcpreplay gnupg gnupg2 gpgv2 curl flex bison" # utility libraries
-PACKAGES+=" libnl-3-dev clang python3-pip" 
+PACKAGES+=" libnl-3-dev clang python3-pip gnupg2" 
 
 $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq $PACKAGES"
 
