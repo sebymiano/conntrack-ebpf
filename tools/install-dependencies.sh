@@ -36,7 +36,7 @@ function install_linux_bpftool {
     return
   fi
 
-  cd bpftool
+  cd bpftool/src
   make -j "$(getconf _NPROCESSORS_ONLN)"
   $SUDO make install
   popd
@@ -62,6 +62,6 @@ cd ${DIR}
 set +e
 install_linux_bpftool
 
-pip3 install -r ${DIR}/python_scripts/requirements.txt
+sudo python3 -m pip install -r ${DIR}/python_scripts/requirements.txt --user
 
 popd
