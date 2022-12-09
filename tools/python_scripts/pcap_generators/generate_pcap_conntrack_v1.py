@@ -496,7 +496,7 @@ are coded in the script file itself."""
             # Write the scapy packet to the pcap
             scapy_pkt.time = ts
             if use_mac_for_rss:
-                new_mac = change_mac(mac_del_colons(server_mac), i % num_cores)
+                new_mac = change_mac(mac_del_colons(server_mac), rendered % num_cores)
                 scapy_pkt[Ether].dst = mac_add_colons(new_mac)
                 scapy_pkt[Ether].src = client_mac
             pcap.write(scapy_pkt)
