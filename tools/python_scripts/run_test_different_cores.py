@@ -60,7 +60,7 @@ def copy_file_from_remote_host(client, remote_file, local_file):
 
     ftp_client.close()
 
-def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac, disable_ht):
+def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac, disable_ht, disable_cstates):
     #make sure we start from a clean environment
     clean_environment(client, version, remote_iface)
 
@@ -86,12 +86,13 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         else:
             raise Exception("Error while executing disable_ht.sh script")
 
-    logger.info("Let's disable cstates")
-    _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
-    if ssh_stdout.channel.recv_exit_status() == 0:
-        logger.debug(f"Cstates disabled")
-    else:
-        raise Exception("Error while executing set_cpu_frequency.sh script")   
+    if disable_cstates:
+        logger.info("Let's disable cstates")
+        _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
+        if ssh_stdout.channel.recv_exit_status() == 0:
+            logger.debug(f"Cstates disabled")
+        else:
+            raise Exception("Error while executing set_cpu_frequency.sh script")   
 
     # Adding 60 seconds to make sure the system will setup everything before closing the test
     new_duration = duration + 60
@@ -196,6 +197,7 @@ def main():
     parser.add_argument("-p", '--profiles', nargs='?', choices=['NONE', 'BPFTOOL', 'BPF_STATS', 'PERF'], action='append', help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
     parser.add_argument('-m', '--mac-rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
     parser.add_argument('--disable-ht', action='store_true', help="Disable Hyper-Threading")
+    parser.add_argument('--disable-cstates', action='store_true', help="Disable CStates")
 
     args = parser.parse_args()
 
@@ -220,6 +222,7 @@ def main():
     out_dir = args.out_dir
     use_mac_for_rss = args.mac_rss
     disable_ht = args.disable_ht
+    disable_cstates = args.disable_cstates
 
     if profiles is None:
         profiles = list()
@@ -292,7 +295,7 @@ def main():
                         sys.exit(1)
 
                     stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
-                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac, disable_ht)
+                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac, disable_ht, disable_cstates)
 
                     if action == "DROP":
                         pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "
