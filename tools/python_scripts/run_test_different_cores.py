@@ -60,22 +60,29 @@ def copy_file_from_remote_host(client, remote_file, local_file):
 
     ftp_client.close()
 
-def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name):
+def init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, stats_file_name, use_mac_for_rss, start_mac):
     #make sure we start from a clean environment
     clean_environment(client, version, remote_iface)
 
-    _, ssh_stdout, _ = client.exec_command(f"sudo -S ethtool -L {remote_iface} combined {core}")
-    if ssh_stdout.channel.recv_exit_status() == 0:
-        logger.debug(f"Changed NIC queues to {core}")
+    if not use_mac_for_rss:
+        _, ssh_stdout, _ = client.exec_command(f"sudo -S ethtool -L {remote_iface} combined {core}")
+        if ssh_stdout.channel.recv_exit_status() == 0:
+            logger.debug(f"Changed NIC queues to {core}")
+        else:
+            raise Exception("Error while executing ethtool command")
     else:
-        raise Exception("Error while executing ethtool command")
+        _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_rss_mac.sh {remote_iface} {core} {start_mac}")
+        if ssh_stdout.channel.recv_exit_status() == 0:
+            logger.debug(f"Set RSS for {core} cores")
+        else:
+            raise Exception("Error while executing set_rss_mac.sh command")
 
     logger.info("Let's disable cstates")
     _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
     if ssh_stdout.channel.recv_exit_status() == 0:
         logger.debug(f"Cstates disabled")
     else:
-        raise Exception("Error while disabling cstates")   
+        raise Exception("Error while executing set_cpu_frequency.sh command")   
 
     # Adding 60 seconds to make sure the system will setup everything before closing the test
     new_duration = duration + 60
@@ -178,6 +185,7 @@ def main():
     parser.add_argument("-r", "--runs", type=int, default=5, help="Number of runs for each test")
     parser.add_argument("-a", '--action', default='REDIR', const='REDIR', nargs='?', choices=['REDIR', 'DROP'], help='REDIR is to redirect packets on the same iface, DROP is to drop all pkts')
     parser.add_argument("-p", '--profiles', nargs='?', choices=['NONE', 'BPFTOOL', 'BPF_STATS', 'PERF'], action='append', help='NONE does not perform any profiling, BPFTOOL uses bpftool profile to get stats about the running program, PERF uses Linux perf tool')
+    parser.add_argument('-m', '--mac-rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
 
     args = parser.parse_args()
 
@@ -200,6 +208,7 @@ def main():
     action = args.action
     profiles = args.profiles
     out_dir = args.out_dir
+    use_mac_for_rss = args.mac_rss
 
     if profiles is None:
         profiles = list()
@@ -215,6 +224,7 @@ def main():
     local_iface_pci_id = config["local_iface_pci_id"]
     local_numa_core = config["local_numa_core"]
     remote_bpf_prog_name = config["remote_bpf_prog_name"]
+    server_mac = config["server_mac"]
 
     if ("local_private_key" not in config) or (not config["local_private_key"]):
         logger.warning("The YAML file does not provide any private key.")
@@ -248,12 +258,8 @@ def main():
                 pcap_path = ""
 
                 for pcap in config["local_pcaps"]:
-                    search_core = core
-                    if version == "v1" or version == "v1ns":
-                        search_core = 1
-
-                    if int(pcap["core"]) == search_core:
-                        pcap_path = pcap["path"]
+                    if int(pcap["core"]) == core:
+                        pcap_path = pcap[f"{version}_path"]
                         pcap_path_found = True
                         break
                     
@@ -275,7 +281,7 @@ def main():
                         sys.exit(1)
 
                     stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
-                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}")
+                    init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac)
 
                     if action == "DROP":
                         pktgen_cmd = (f"sudo dpdk-replay --nbruns 100000000 --numacore {local_numa_core} "

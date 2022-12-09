@@ -4,23 +4,40 @@
  remote_conntrack_path: "~/conntrack-ebpf"
  remote_iface: "eth0"
  remote_bpf_prog_name: "xdp_conntrack_prog"
+ server_mac: "f8:f2:1e:b2:65:70"
  #local_private_key: "/home/user/.ssh/id_rsa"
  local_iface_pci_id: "0000:3b:00.0"
  local_numa_core: 0
  local_pcaps:
    - core: 1
-     path: "~/conntrack_v1.pcap"
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
+     v2_path: "~/conntrack_v1.pcap"
    - core: 2
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_2cores.pcap"
    - core: 3
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_3cores.pcap"
    - core: 4
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_4cores.pcap"
    - core: 5
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_5cores.pcap"
    - core: 6
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_6cores.pcap"
    - core: 7
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_7cores.pcap"
    - core: 8
+     v1_path: "~/conntrack_v1.pcap"
+     v1ns_path: "~/conntrack_v1.pcap"
      path: "~/conntrack_v2_8cores.pcap"
