@@ -13,15 +13,15 @@ import os
 from pdfCropMargins import crop
 
 def create_throughput_fig(test, narrow=False):
-    df_v1 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1_drop.csv')
+    df_v1 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1_redir.csv')
     #Calculate mean across the different rows
     df_v1['mean'] = df_v1.iloc[:, 1:].mean(axis=1)
 
-    df_v1ns = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1ns_drop.csv')
+    df_v1ns = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1ns_redir.csv')
     #Calculate mean across the different rows
     df_v1ns['mean'] = df_v1ns.iloc[:, 1:].mean(axis=1)
 
-    df_v2 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v2_drop.csv')
+    df_v2 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v2_redir.csv')
     #Calculate mean across the different rows
     df_v2['mean'] = df_v2.iloc[:, 1:].mean(axis=1)
 
