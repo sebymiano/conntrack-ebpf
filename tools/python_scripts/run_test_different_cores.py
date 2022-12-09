@@ -71,6 +71,7 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
         else:
             raise Exception("Error while executing ethtool command")
     else:
+        logger.debug(f"Running remote cmd: sudo {remote_conntrack_path}/tools/set_rss_mac.sh {remote_iface} {core} {start_mac}")
         _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/set_rss_mac.sh {remote_iface} {core} {start_mac}")
         if ssh_stdout.channel.recv_exit_status() == 0:
             logger.debug(f"Set RSS for {core} cores")
