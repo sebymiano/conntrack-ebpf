@@ -292,13 +292,18 @@ def main():
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
                     try:
+                        logger.info(f"Connecting to {remote_user}:{remote_host} with key: {local_private_key}")
                         client.connect(hostname=remote_host, username=remote_user, pkey=k)
                     except Exception as e:
                         logger.critical("Failed to connect. Exit!")
                         logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
                         sys.exit(1)
 
+                    logger.info(f"Client connected!")
+
                     stats_file_name = f"result_{version}_core{core}_run{run}_{action}.csv"
+
+                    logger.info(f"Let's initialize the remote client!")
                     init_remote_client(client, remote_conntrack_path, remote_iface, core, version, action, duration, f"{remote_conntrack_path}/src/{stats_file_name}", use_mac_for_rss, server_mac, disable_ht, disable_cstates)
 
                     if action == "DROP":
