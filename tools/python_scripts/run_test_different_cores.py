@@ -360,7 +360,6 @@ def main():
                 finally:
                     clean_environment(client, version, remote_iface)
                     client.close()
-                    exit(1)
 
     columns_hdr = list()
     for run in range(runs):
