@@ -61,6 +61,12 @@ if [[ "${CURRENT_UBUNTU_VERSION}" == "20.04" ]]; then
   $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq zlibc"
 fi
 
+if [[ "${CURRENT_UBUNTU_VERSION}" == "22.04" ]]; then
+  pushd
+  cd /usr/lib/x86_64-linux-gnu/
+  sudo ln -s -f libc.a liblibc.a
+  popd
+fi
 
 pushd .
 cd ${DIR}
