@@ -129,7 +129,7 @@ class MetadataElem(ctypes.Structure):
         md_bytes += bytes(self.info)
         return md_bytes
 
-CONFIG_file_default = f"{sys.path[0]}/config.yaml"
+CONFIG_file_default = f"{sys.path[0]}/../config.yaml"
 
 # The 'stream_specs' tuple defined below is used to generate a set of
 # streams like this (X axis is time in seconds, e.g. Stream C starts
@@ -432,7 +432,7 @@ are coded in the script file itself."""
     parser = argparse.ArgumentParser(description = desc)
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', required = True, help='Output pcap file name')
-    parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v2'], help='v1 is for shared state, v2 is for local state')
+    parser.add_argument("-v", '--version', default='v2', const='v2', nargs='?', choices=['v2'], help='v1 is for shared state, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, default=0, help="Number of cores")
     parser.add_argument('-r', '--rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
 

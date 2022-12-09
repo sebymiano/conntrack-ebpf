@@ -102,7 +102,7 @@ class FlowInfo(ctypes.BigEndianStructure):
                 ('ackN', ctypes.c_uint32),
                 ('timestamp', ctypes.c_uint64)]
 
-CONFIG_file_default = f"{sys.path[0]}/config.yaml"
+CONFIG_file_default = f"{sys.path[0]}/../config.yaml"
 
 # The 'stream_specs' tuple defined below is used to generate a set of
 # streams like this (X axis is time in seconds, e.g. Stream C starts
@@ -377,6 +377,15 @@ def random_ip(network):
     ip_address = ipaddress.IPv4Address(network_int + rand_host_int) # combine the parts 
     return ip_address.exploded
 
+def change_mac(mac, offset):
+    return "{:012X}".format(int(mac, 16) + offset)
+
+def mac_add_colons(mac):
+    return ':'.join(mac[i:i+2] for i in range(0,12,2))
+
+def mac_del_colons(mac):
+    return mac.replace(':', '')
+
 def main():
 
     desc = """Generate pcap file for one or more TCP/IPv4 streams.
@@ -386,8 +395,8 @@ are coded in the script file itself."""
     parser = argparse.ArgumentParser(description = desc)
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', required = True, help='Output pcap file name')
-    parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v2'], help='v1 is for shared state, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, default=0, help="Number of cores")
+    parser.add_argument('-r', '--rss', action='store_true', help="Increase MAC address for every packet in order to use RSS on the NIC")
 
     args = parser.parse_args()
 
@@ -402,13 +411,8 @@ are coded in the script file itself."""
             print(exc)
             sys.exit(-1)
 
-    version = args.version
     num_cores = args.num_cores
-
-    if version == "v2":
-        if num_cores <= 0:
-            print("Please specify the number of cores")
-            sys.exit(-1)
+    use_mac_for_rss = args.rss
     
     session_number = config['session_number']
     streams = []
@@ -491,6 +495,9 @@ are coded in the script file itself."""
 
             # Write the scapy packet to the pcap
             scapy_pkt.time = ts
+            if use_mac_for_rss:
+                new_mac = change_mac(mac_del_colons(server_mac), i % num_cores)
+                scapy_pkt[Ether].dst = mac_add_colons(new_mac)
             pcap.write(scapy_pkt)
 
             # Report progress to the impatient user
