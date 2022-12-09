@@ -120,7 +120,7 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
 
     _, ssh_stdout, _ = client.exec_command(f"tmux new-session -d -s conntrack 'sudo {conntrack_cmd}'")
     if ssh_stdout.channel.recv_exit_status() == 0:
-        logger.debug(f"Tmux session started")
+        logger.debug(f"Tmux session started: tmux new-session -d -s conntrack 'sudo {conntrack_cmd}'")
     else:
         raise Exception("Error while running command in tmux session")   
 

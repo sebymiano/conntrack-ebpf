@@ -35,6 +35,13 @@ core=0
 sudo ethtool --features $1 ntuple off
 sudo ethtool --features $1 ntuple on
 
+# Most of the times, disabling ntuple deletes also the entries
+# However, this does not work everytime. Let's delete them manually
+
+for i in {1000..2000}; do
+  sudo ethtool -N ${iface} delete $i > /dev/null 2>&1
+done
+
 while [ "$core" -lt "$cores" ]
 do
   if [ "$core" -ne "0" ]; then
