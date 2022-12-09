@@ -35,11 +35,15 @@ core=0
 sudo ethtool --features $1 ntuple off
 sudo ethtool --features $1 ntuple on
 
-while [ "$core" -gte "$cores" ]
+while [ "$core" -lt "$cores" ]
 do
-  mac=$(echo $mac_address | tr -d ':')
-  macadd=$(( 0x$mac + 1 ))
-  macnew=$(printf "%012x" $macadd | sed 's/../&:/g;s/:$//')
+  if [ "$core" -ne "0" ]; then
+    mac=$(echo $mac_address | tr -d ':')
+    macadd=$(( 0x$mac + 1 ))
+    macnew=$(printf "%012x" $macadd | sed 's/../&:/g;s/:$//')
+  else
+    macnew=$mac_address
+  fi
 
   set -x
   sudo ethtool -N ${iface} flow-type ether dst ${macnew} action ${ALL_CORES[$core]}
