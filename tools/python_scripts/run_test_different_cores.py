@@ -85,12 +85,16 @@ def init_remote_client(client, remote_conntrack_path, remote_iface, core, versio
             raise Exception("Error while executing set_rss_mac.sh script")
 
     if disable_ht:
-        logger.info(f"Running remote cmd: sudo {remote_conntrack_path}/tools/disable_ht.sh 1")
-        _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/disable_ht.sh 1")
-        if ssh_stdout.channel.recv_exit_status() == 0:
-            logger.debug(f"Hyper threading disabled")
-        else:
-            raise Exception("Error while executing disable_ht.sh script")
+        disable_ht_val = 1
+    else:
+        disable_ht_val = 0
+        
+    logger.info(f"Running remote cmd: sudo {remote_conntrack_path}/tools/disable_ht.sh {disable_ht_val}")
+    _, ssh_stdout, _ = client.exec_command(f"sudo {remote_conntrack_path}/tools/disable_ht.sh {disable_ht_val}")
+    if ssh_stdout.channel.recv_exit_status() == 0:
+        logger.debug(f"Hyper threading disabled")
+    else:
+        raise Exception("Error while executing disable_ht.sh script")
 
     if disable_cstates:
         logger.info(f"Running remote cmd: sudo {remote_conntrack_path}/tools/set_cpu_frequency.sh")
