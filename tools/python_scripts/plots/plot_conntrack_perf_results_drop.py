@@ -15,13 +15,13 @@ import statistics
 
 from pdfCropMargins import crop
 
-def create_bpfstats_perf_fig(test, label, narrow=False):
+def create_bpfstats_perf_fig(test, label, dir, narrow=False):
     try:
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v1_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v1_drop.perf.yaml', "r") as stream:
             df_v1 = yaml.safe_load(stream)
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v1ns_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v1ns_drop.perf.yaml', "r") as stream:
             df_v1ns = yaml.safe_load(stream)
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v2_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v2_drop.perf.yaml', "r") as stream:
             df_v2 = yaml.safe_load(stream)
     except Exception as exc:
         print(exc)
@@ -77,13 +77,13 @@ def create_bpfstats_perf_fig(test, label, narrow=False):
         crop(["-p", "15", "-u", "-s", "-o", f'{output_name}_cropped.pdf', f"{output_name}.pdf"])
         os.replace(f'{output_name}_cropped.pdf', f"{output_name}.pdf")
 
-def create_bpftool_perf_fig(test, metric, label, narrow=False):
+def create_bpftool_perf_fig(test, metric, label, dir, narrow=False):
     try:
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v1_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v1_drop.perf.yaml', "r") as stream:
             df_v1 = yaml.safe_load(stream)
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v1ns_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v1ns_drop.perf.yaml', "r") as stream:
             df_v1ns = yaml.safe_load(stream)
-        with open(f'{sys.path[0]}/../data/perf/results_{test}_v2_drop.perf.yaml', "r") as stream:
+        with open(f'{sys.path[0]}/../data/{dir}/perf/results_{test}_v2_drop.perf.yaml', "r") as stream:
             df_v2 = yaml.safe_load(stream)
     except Exception as exc:
         print(exc)
@@ -142,15 +142,17 @@ def create_bpftool_perf_fig(test, metric, label, narrow=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate figure for results between shared vs local version')
     parser.add_argument("-n", "--narrow", action="store_true", default=False, help="Creates a smaller figure")
+    parser.add_argument("-d", "--dir", type=str, default="data-40gbps", help="Data directory where results are placed")
     args = parser.parse_args()
 
     test_names = ["100f", "10000f", "10000f_2pkts"]
+    dir = args.dir
 
     for test in test_names:
-        create_bpftool_perf_fig(test, "cycles", "# of cycles", narrow=args.narrow)
-        create_bpftool_perf_fig(test, "dtlb_misses", "# of dtlb_misses", narrow=args.narrow)
-        create_bpftool_perf_fig(test, "instructions", "# of instructions", narrow=args.narrow)
-        create_bpftool_perf_fig(test, "llc_misses", "# of llc_misses", narrow=args.narrow)
+        create_bpftool_perf_fig(test, "cycles", "# of cycles", dir, narrow=args.narrow)
+        create_bpftool_perf_fig(test, "dtlb_misses", "# of dtlb_misses", dir, narrow=args.narrow)
+        create_bpftool_perf_fig(test, "instructions", "# of instructions", dir, narrow=args.narrow)
+        create_bpftool_perf_fig(test, "llc_misses", "# of llc_misses", dir, narrow=args.narrow)
 
-        create_bpfstats_perf_fig(test, "ns latency", narrow=args.narrow)
+        create_bpfstats_perf_fig(test, "ns latency", dir, narrow=args.narrow)
         

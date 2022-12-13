@@ -12,16 +12,16 @@ import os
 
 from pdfCropMargins import crop
 
-def create_throughput_fig(test, narrow=False):
-    df_v1 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1_drop.csv')
+def create_throughput_fig(test, dir, narrow=False):
+    df_v1 = pd.read_csv(f'{sys.path[0]}/../data/{dir}/throughput/results_{test}_v1_drop.csv')
     #Calculate mean across the different rows
     df_v1['mean'] = df_v1.iloc[:, 1:].mean(axis=1)
 
-    df_v1ns = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v1ns_drop.csv')
+    df_v1ns = pd.read_csv(f'{sys.path[0]}/../data/{dir}/throughput/results_{test}_v1ns_drop.csv')
     #Calculate mean across the different rows
     df_v1ns['mean'] = df_v1ns.iloc[:, 1:].mean(axis=1)
 
-    df_v2 = pd.read_csv(f'{sys.path[0]}/../data/throughput/results_{test}_v2_drop.csv')
+    df_v2 = pd.read_csv(f'{sys.path[0]}/../data/{dir}/throughput/results_{test}_v2_drop.csv')
     #Calculate mean across the different rows
     df_v2['mean'] = df_v2.iloc[:, 1:].mean(axis=1)
 
@@ -46,7 +46,7 @@ def create_throughput_fig(test, narrow=False):
 
     plt.tight_layout()
 
-    output_name = f'{sys.path[0]}/../figures/results_{test}_drop'
+    output_name = f'{sys.path[0]}/../figures/results_{test}_{dir}_drop'
 
     plt.savefig(f'{output_name}.pdf')
 
@@ -59,9 +59,12 @@ def create_throughput_fig(test, narrow=False):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Generate figure for results between shared vs local version')
     parser.add_argument("-n", "--narrow", action="store_true", default=False, help="Creates a smaller figure")
+    parser.add_argument("-d", "--dir", type=str, default="data-40gbps", help="Data directory where results are placed")
     args = parser.parse_args()
 
-    test_names = ["100flows", "10000flows", "10000flows_2pkts"]
+    # test_names = ["100flows", "10000flows", "10000flows_2pkts"]
+    test_names = ["100f", "10000f", "10000f_1pkt"]
+    dir = args.dir
 
     for test in test_names:
-        create_throughput_fig(test, narrow=args.narrow)
+        create_throughput_fig(test, dir, narrow=args.narrow)

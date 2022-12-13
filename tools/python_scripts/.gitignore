@@ -1,9 +1,12 @@
 *.pcap
 *.csv
 *.yaml
-!data/perf/*.csv
-!data/perf/*.yaml
-!data/throughput/*
+!data/data-40gbps/perf/*.csv
+!data/data-40gbps/perf/*.yaml
+!data/data-100gbps-r650/perf/*.csv
+!data/data-100gbps-r650/perf/*.yaml
+!data/data-40gbps/throughput/*
+!data/data-100gbps-r650/throughput/*
 !config_test.yaml
 !config.yaml
 __pycache__/

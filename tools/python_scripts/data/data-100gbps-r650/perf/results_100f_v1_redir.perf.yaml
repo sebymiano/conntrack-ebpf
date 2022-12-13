@@ -1,0 +1,266 @@
+BPFTOOL:
+  1:
+  - cycles:
+      run_cnt: 47675268
+      value: 51885656250
+    dtlb_misses:
+      run_cnt: 47675268
+      value: 1639399
+    instructions:
+      run_cnt: 47675268
+      value: 97088499593
+    llc_misses:
+      run_cnt: 47675268
+      value: 20762
+  - cycles:
+      run_cnt: 48495641
+      value: 51344466677
+    dtlb_misses:
+      run_cnt: 48495641
+      value: 211776
+    instructions:
+      run_cnt: 48495641
+      value: 98746054655
+    llc_misses:
+      run_cnt: 48495641
+      value: 20785
+  - cycles:
+      run_cnt: 48203482
+      value: 51314470894
+    dtlb_misses:
+      run_cnt: 48203482
+      value: 211859
+    instructions:
+      run_cnt: 48203482
+      value: 98101209598
+    llc_misses:
+      run_cnt: 48203482
+      value: 20891
+  2:
+  - cycles:
+      run_cnt: 92149734
+      value: 109431230548
+    dtlb_misses:
+      run_cnt: 92149734
+      value: 370665
+    instructions:
+      run_cnt: 92149734
+      value: 186903471179
+    llc_misses:
+      run_cnt: 92149734
+      value: 23134
+  - cycles:
+      run_cnt: 92382394
+      value: 108939073445
+    dtlb_misses:
+      run_cnt: 92382394
+      value: 384945
+    instructions:
+      run_cnt: 92382394
+      value: 187408097666
+    llc_misses:
+      run_cnt: 92382394
+      value: 26587
+  - cycles:
+      run_cnt: 91599091
+      value: 109464575664
+    dtlb_misses:
+      run_cnt: 91599091
+      value: 1418633
+    instructions:
+      run_cnt: 91599091
+      value: 186421357532
+    llc_misses:
+      run_cnt: 91599091
+      value: 23491
+  3:
+  - cycles:
+      run_cnt: 135194250
+      value: 169058101559
+    dtlb_misses:
+      run_cnt: 135194250
+      value: 362077
+    instructions:
+      run_cnt: 135194250
+      value: 276278618097
+    llc_misses:
+      run_cnt: 135194250
+      value: 25418
+  - cycles:
+      run_cnt: 135619658
+      value: 166475932589
+    dtlb_misses:
+      run_cnt: 135619658
+      value: 386659
+    instructions:
+      run_cnt: 135619658
+      value: 275459427480
+    llc_misses:
+      run_cnt: 135619658
+      value: 28481
+  - cycles:
+      run_cnt: 136445725
+      value: 166386612227
+    dtlb_misses:
+      run_cnt: 136445725
+      value: 609398
+    instructions:
+      run_cnt: 136445725
+      value: 277332789189
+    llc_misses:
+      run_cnt: 136445725
+      value: 25780
+  4:
+  - cycles:
+      run_cnt: 179097918
+      value: 225273832585
+    dtlb_misses:
+      run_cnt: 179097918
+      value: 453613
+    instructions:
+      run_cnt: 179097918
+      value: 364694072961
+    llc_misses:
+      run_cnt: 179097918
+      value: 26962
+  - cycles:
+      run_cnt: 182102922
+      value: 219461580826
+    dtlb_misses:
+      run_cnt: 182102922
+      value: 504766
+    instructions:
+      run_cnt: 182102922
+      value: 370028100988
+    llc_misses:
+      run_cnt: 182102922
+      value: 28354
+  - cycles:
+      run_cnt: 181529858
+      value: 219826288845
+    dtlb_misses:
+      run_cnt: 181529858
+      value: 600922
+    instructions:
+      run_cnt: 181529858
+      value: 368967016392
+    llc_misses:
+      run_cnt: 181529858
+      value: 27881
+  5:
+  - cycles:
+      run_cnt: 224381062
+      value: 281237255909
+    dtlb_misses:
+      run_cnt: 224381062
+      value: 549636
+    instructions:
+      run_cnt: 224381062
+      value: 456108797015
+    llc_misses:
+      run_cnt: 224381062
+      value: 48971
+  - cycles:
+      run_cnt: 221111350
+      value: 284527494948
+    dtlb_misses:
+      run_cnt: 221111350
+      value: 457881
+    instructions:
+      run_cnt: 221111350
+      value: 449965244058
+    llc_misses:
+      run_cnt: 221111350
+      value: 33471
+  - cycles:
+      run_cnt: 223210383
+      value: 280555184721
+    dtlb_misses:
+      run_cnt: 223210383
+      value: 510917
+    instructions:
+      run_cnt: 223210383
+      value: 453529072155
+    llc_misses:
+      run_cnt: 223210383
+      value: 42197
+  6:
+  - cycles:
+      run_cnt: 265454228
+      value: 341502521769
+    dtlb_misses:
+      run_cnt: 265454228
+      value: 398904
+    instructions:
+      run_cnt: 265454228
+      value: 541733621140
+    llc_misses:
+      run_cnt: 265454228
+      value: 58807
+  - cycles:
+      run_cnt: 258403335
+      value: 351674245635
+    dtlb_misses:
+      run_cnt: 258403335
+      value: 321321
+    instructions:
+      run_cnt: 258403335
+      value: 527651107238
+    llc_misses:
+      run_cnt: 258403335
+      value: 38178
+  - cycles:
+      run_cnt: 266435093
+      value: 339327961444
+    dtlb_misses:
+      run_cnt: 266435093
+      value: 7474891
+    instructions:
+      run_cnt: 266435093
+      value: 543102066631
+    llc_misses:
+      run_cnt: 266435093
+      value: 38412
+BPF_STATS:
+  1:
+  - run_cnt: 179880022
+    run_time_ns: 24063541254
+  - run_cnt: 176725791
+    run_time_ns: 24659899767
+  - run_cnt: 172449299
+    run_time_ns: 24015584507
+  2:
+  - run_cnt: 295891284
+    run_time_ns: 56324843696
+  - run_cnt: 300709556
+    run_time_ns: 55992533108
+  - run_cnt: 301031520
+    run_time_ns: 56354794837
+  3:
+  - run_cnt: 318946504
+    run_time_ns: 98746776087
+  - run_cnt: 293549574
+    run_time_ns: 100675087629
+  - run_cnt: 294714622
+    run_time_ns: 101411609300
+  4:
+  - run_cnt: 188676304
+    run_time_ns: 155155230659
+  - run_cnt: 187930314
+    run_time_ns: 154667615249
+  - run_cnt: 197237161
+    run_time_ns: 153814949313
+  5:
+  - run_cnt: 194230424
+    run_time_ns: 199380937961
+  - run_cnt: 189141838
+    run_time_ns: 198610625099
+  - run_cnt: 198298259
+    run_time_ns: 198375847810
+  6:
+  - run_cnt: 183739628
+    run_time_ns: 245397102740
+  - run_cnt: 195656298
+    run_time_ns: 245189223356
+  - run_cnt: 204334481
+    run_time_ns: 243450488546
