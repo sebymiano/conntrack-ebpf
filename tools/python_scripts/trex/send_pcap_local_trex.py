@@ -39,7 +39,7 @@ def main():
 
         print(f"Loading PCAP file...")
         profile = STLProfile.load_pcap(pcap_file,
-                                       ipg_usec = 100,
+                                       ipg_usec = 0.01,
                                        loop_count = 0)
 
         c.add_streams(profile.get_streams(), ports = [port])
