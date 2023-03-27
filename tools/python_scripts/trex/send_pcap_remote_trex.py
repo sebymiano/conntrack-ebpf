@@ -39,7 +39,7 @@ def main():
 
         c.push_remote(pcap_file,
                     ports = 0,
-                    ipg_usec = 0.1,
+                    ipg_usec = 0.01,
                     count = 0,
                     speedup = speedup,
                     duration = duration)

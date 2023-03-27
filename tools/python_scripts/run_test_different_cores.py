@@ -203,6 +203,7 @@ def main():
     parser.add_argument("-c", "--config-file", type=str, default=CONFIG_file_default, help="The YAML config file")
     parser.add_argument("-o", '--out', type=str, required = True, help='Output file name')
     parser.add_argument('--out-dir', type=str, help='Directory where to place results')
+    parser.add_argument('--password', type=str, help='Password to connect to remote server')
     parser.add_argument("-v", '--version', default='v1', const='v1', nargs='?', choices=['v1', 'v1ns', 'v2'], help='v1 is for shared state, v1ns is for shared state without spin locks, v2 is for local state')
     parser.add_argument("-n", "--num-cores", type=int, required = True, help="Max number of cores. The test will start from 1 to this value")
     parser.add_argument("-d", "--duration", type=int, default=60, help="Duration of the test")
@@ -302,8 +303,13 @@ def main():
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
                     try:
-                        logger.info(f"Connecting to {remote_user}:{remote_host} with key: {local_private_key}")
-                        client.connect(hostname=remote_host, username=remote_user, pkey=k)
+                        # use a password to connect
+                        if args.password:
+                            logger.info(f"Connecting to {remote_user}:{remote_host} with password: {args.password}")
+                            client.connect(hostname=remote_host, username=remote_user, password=args.password)
+                        else:
+                            logger.info(f"Connecting to {remote_user}:{remote_host} with key: {local_private_key}")
+                            client.connect(hostname=remote_host, username=remote_user, pkey=k)
                     except Exception as e:
                         logger.critical("Failed to connect. Exit!")
                         logger.critical("*** Caught exception: %s: %s" % (e.__class__, e))
