@@ -386,6 +386,13 @@ def mac_add_colons(mac):
 def mac_del_colons(mac):
     return mac.replace(':', '')
 
+def sample_flow_size(cdf):
+    r = random.random()
+    for size, probability in cdf:
+        if r < probability:
+            return size
+    return cdf[-1][0]
+
 def main():
 
     desc = """Generate pcap file for one or more TCP/IPv4 streams.
@@ -418,6 +425,10 @@ are coded in the script file itself."""
     streams = []
     start_at = 0
     count = 0
+
+    cdf_data = config['flow_size_cdf']
+    cdf = [(entry['size'], entry['probability']) for entry in cdf_data]
+
     print(f"Let's start building the trace for {session_number} flows")
     pbar = ProgressBar(widgets=widgets, maxval=session_number).start()
     for i in range(session_number):
@@ -432,7 +443,7 @@ are coded in the script file itself."""
         bps = random.randint(config['rate_bps_start'], config['rate_bps_end'])
         num_pkt_every_connection = config['num_pkts_every_connection']
         duration = random.randint(config['duration_start'], config['duration_end'])
-        packet_len = random.randint(config['packet_length_start'], config['packet_length_end'])
+        packet_len = sample_flow_size(cdf)
 
         s = make_tcp_stream(server_ip = server_ip,
                             client_ip = client_ip,
