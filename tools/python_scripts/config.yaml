@@ -1,5 +1,5 @@
 ---
- session_number: 10
+ session_number: 100
  server_ip_range: "10.10.1.0/24"
  client_ip_range: "10.10.2.0/24"
  server_mac: "f8:f2:1e:b2:65:70"
@@ -13,8 +13,8 @@
  num_pkts_every_connection: 100
 #  packet_length_start: 64
 #  packet_length_end: 64
- duration_start: 1 # 30s
- duration_end: 1 # 30s
+ duration_start: 5 # 30s
+ duration_end: 5 # 30s
  flow_size_cdf:
   # - size: 512
   #   probability: 0.2
@@ -24,3 +24,6 @@
   #   probability: 0.8
   - size: 64
     probability: 1.0
+ flow_rate_distribution:
+  mean: 1
+  std_dev: 0.1
