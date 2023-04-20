@@ -58,7 +58,7 @@ static __always_inline void swap_src_dst_mac(void *data) {
 }
 
 static bool validate_ethertype(void *data, void *data_end, __u16 *h_proto, __u16 *nh_off) {
-    *nh_off = ETH_HLEN;
+    *nh_off += ETH_HLEN;
 
     if (data + *nh_off > data_end)
         return false;

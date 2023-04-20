@@ -10,3 +10,6 @@
 [submodule "liblog"]
 	path = liblog
 	url = https://github.com/rxi/log.c.git
+[submodule "libcuckoo"]
+	path = libcuckoo
+	url = https://github.com/sebymiano/cuckoo_hash_bpf.git

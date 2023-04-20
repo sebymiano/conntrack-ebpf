@@ -38,7 +38,7 @@ SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
     int rc;
     struct packetHeaders pkt;
-    __u16 nh_off;
+    __u16 nh_off = 0;
 
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;

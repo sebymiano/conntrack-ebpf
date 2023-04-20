@@ -2,5 +2,6 @@ src/.output
 src/build
 src/conntrack
 src/conntrack_v2
+src/conntrack_cuckoo
 src/compile_commands.json 
 .vscode/settings.json
