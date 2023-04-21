@@ -59,6 +59,21 @@ struct metadata_elem {
     struct flow_info info;
 } __attribute__((packed));
 
+struct metadata_processing_loop_ctx {
+    void *data;
+    void *data_end;
+    struct packetHeaders curr_pkt;
+    __u16 nh_off;
+    uint8_t curr_ipRev;
+    uint8_t curr_portRev;
+    struct ct_k curr_pkt_key;
+    struct ct_v curr_value;
+    bool curr_value_set;
+    struct ct_v *map_curr_value;
+    struct cuckoo_connections_cuckoo_hash_map *cuckoo_map;
+    int ret_code;
+};
+
 typedef enum return_action { PASS_ACTION = 0, TCP_NEW } return_action_t;
 
 static __always_inline void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt,
@@ -374,16 +389,128 @@ advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt, uin
     return -1;
 }
 
+#define PASS_ACTION_FINAL_CTX 1
+#define DROP_CTX 2
+
+static int metadata_processing_loop(uint32_t index, void *data) {
+    struct metadata_processing_loop_ctx *ctx = (struct metadata_processing_loop_ctx *)data;
+    int ret;
+    if (index == (conntrack_cfg.num_pkts - 1)) {
+        bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", index);
+        if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
+            ctx->curr_pkt.timestamp = bpf_ktime_get_boot_ns();
+        } else {
+            ctx->curr_pkt.timestamp = bpf_ktime_get_ns();
+        }
+
+        bpf_log_debug("Current value is not NULL, this means other packets in the md had "
+                        "same connection as current one");
+        // Keys are equals, we have same connection as current pkt
+        ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt, &ctx->curr_ipRev,
+                                              &ctx->curr_portRev, &ctx->curr_value, &ctx->curr_value_set);
+        if (ret < 0) {
+            bpf_log_err("Received not TCP packet (id: %d)", index);
+            ctx->ret_code = PASS_ACTION_FINAL_CTX;
+            return 1;
+        }
+
+        if (ret == TCP_NEW || ctx->map_curr_value == NULL) {
+            bpf_log_debug("Create new entry in the map");
+            struct ct_k curr_pkt_key_test;
+            __bpf_memcpy_builtin(&curr_pkt_key_test, &ctx->curr_pkt_key, sizeof(struct ct_k));
+            cuckoo_connections_cuckoo_insert(ctx->cuckoo_map, &curr_pkt_key_test, &ctx->curr_value);
+        } else {
+            if (ctx->map_curr_value != NULL) {
+                bpf_log_debug("Update existing map entry");
+                ctx->map_curr_value->ipRev = ctx->curr_value.ipRev;
+                ctx->map_curr_value->portRev = ctx->curr_value.portRev;
+                ctx->map_curr_value->sequence = ctx->curr_value.sequence;
+                ctx->map_curr_value->ttl = ctx->curr_value.ttl;
+                ctx->map_curr_value->state = ctx->curr_value.state;
+            }
+        }
+        // This is the last pkt
+        ctx->ret_code = PASS_ACTION_FINAL_CTX;
+        return 1;
+    } else {
+        bpf_log_debug("Dealing with pkt: %d taken from the metadata.\n", index);
+        struct metadata_elem *md_elem;
+        struct packetHeaders pkt = {0};
+        md_elem = ctx->data + ctx->nh_off;
+
+        if (ctx->data + ctx->nh_off + sizeof(struct metadata_elem) > ctx->data_end) {
+            bpf_log_err("No metadata available in the current pkt\n");
+            ctx->ret_code = DROP_CTX;
+            return 1;
+        }
+
+        pkt.l4proto = md_elem->flow.protocol;
+        pkt.srcIp = md_elem->flow.src_ip;
+        pkt.dstIp = md_elem->flow.dst_ip;
+        pkt.srcPort = md_elem->flow.src_port;
+        pkt.dstPort = md_elem->flow.dst_port;
+
+        pkt.ackN = md_elem->info.ackN;
+        pkt.seqN = md_elem->info.seqN;
+        pkt.flags = md_elem->info.flags;
+        pkt.timestamp = md_elem->info.timestamp;
+
+        uint8_t local_ipRev = 0;
+        uint8_t local_portRev = 0;
+        // This is a trick to ensure the first N packets are skipped
+        if (pkt.l4proto == 0) {
+            bpf_log_debug("Skip this packet since the info are 0ed\n");
+            return 0;
+        } else {
+            struct ct_k local_key = {0};
+            conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
+
+            if (__bpf_memcmp_builtin(&local_key, &ctx->curr_pkt_key, sizeof(ctx->curr_pkt_key)) == 0) {
+                bpf_log_debug("Pkt has same key has current packet, use local variable");
+                if (!ctx->curr_value_set) {
+                    ctx->map_curr_value = cuckoo_connections_cuckoo_lookup(ctx->cuckoo_map, &local_key);
+                    if (ctx->map_curr_value) {
+                        memcpy(&ctx->curr_value, ctx->map_curr_value, sizeof(ctx->curr_value));
+                        ctx->curr_value_set = true;
+                    }
+                }
+                // Keys are equals, we have same connection as current pkt
+                ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev,
+                                                        &local_portRev, &ctx->curr_value,
+                                                        &ctx->curr_value_set);
+                if (ret < 0) {
+                    bpf_log_err("Received not TCP packet");
+                    goto PASS_ACTION;
+                }
+            } else {
+                ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &pkt, &local_ipRev, &local_portRev);
+                if (ret < 0) {
+                    bpf_log_err("Received not TCP packet");
+                    goto PASS_ACTION;
+                }
+            }
+        }
+    }
+
+PASS_ACTION:;
+    ctx->nh_off += sizeof(struct metadata_elem);
+    return 0;
+}
+
 SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
     int rc;
-    struct packetHeaders curr_pkt = {0};
     __u16 nh_off = 0;
     __u16 h_proto;
     __u32 md_size;
     uint32_t zero = 0;
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
+
+    struct metadata_processing_loop_ctx loop_ctx = {0};
+
+    loop_ctx.data = data;
+    loop_ctx.data_end = data_end;
 
     bpf_log_debug("Received packet on interface.\n");
 
@@ -392,6 +519,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
         bpf_printk("cuckoo map not found");
         goto DROP;
     }
+
+    loop_ctx.cuckoo_map = cuckoo_map;
 
     /* Given the new way we are formatting the packet, 
      * we can skip the parsing at the beginning.
@@ -420,122 +549,20 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     nh_off += md_size;
 
-    rc = parse_packet(data, data_end, &curr_pkt, &nh_off);
+    rc = parse_packet(data, data_end, &loop_ctx.curr_pkt, &nh_off);
 
     if (rc < 0) {
         bpf_log_err("Error parsing current packet\n");
         goto DROP;
     }
 
-    struct ct_k curr_pkt_key = {0};
+    conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev, &loop_ctx.curr_portRev);
 
-    uint8_t curr_ipRev = 0;
-    uint8_t curr_portRev = 0;
+    loop_ctx.nh_off = nh_off;
+    bpf_loop(conntrack_cfg.num_pkts, &metadata_processing_loop, &loop_ctx, 0);
 
-    conntrack_get_key(&curr_pkt_key, &curr_pkt, &curr_ipRev, &curr_portRev);
-    struct ct_v curr_value = {0};
-
-    bool curr_value_set = false;
-    struct ct_v *map_curr_value = NULL;
-
-    int ret;
-    for (int i = 0; i < conntrack_cfg.num_pkts; i++) {
-        if (i == (conntrack_cfg.num_pkts - 1)) {
-            bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", i);
-            if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
-                curr_pkt.timestamp = bpf_ktime_get_boot_ns();
-            } else {
-                curr_pkt.timestamp = bpf_ktime_get_ns();
-            }
-
-            bpf_log_debug("Current value is not NULL, this means other packets in the md had "
-                          "same connection as current one");
-            // Keys are equals, we have same connection as current pkt
-            ret = advance_tcp_state_machine_local(&curr_pkt_key, &curr_pkt, &curr_ipRev,
-                                                  &curr_portRev, &curr_value, &curr_value_set);
-            if (ret < 0) {
-                bpf_log_err("Received not TCP packet (id: %d)", i);
-                goto PASS_ACTION_FINAL;
-            }
-
-            if (ret == TCP_NEW || map_curr_value == NULL) {
-                bpf_log_debug("Create new entry in the map");
-                cuckoo_connections_cuckoo_insert(cuckoo_map, &curr_pkt_key, &curr_value);
-                // bpf_map_update_elem(&connections, &curr_pkt_key, &curr_value, BPF_ANY);
-            } else {
-                if (map_curr_value != NULL) {
-                    bpf_log_debug("Update existing map entry");
-                    map_curr_value->ipRev = curr_value.ipRev;
-                    map_curr_value->portRev = curr_value.portRev;
-                    map_curr_value->sequence = curr_value.sequence;
-                    map_curr_value->ttl = curr_value.ttl;
-                    map_curr_value->state = curr_value.state;
-                }
-            }
-            // This is the last pkt
-            goto PASS_ACTION_FINAL;
-        } else {
-            bpf_log_debug("Dealing with pkt: %d taken from the metadata.\n", i);
-            struct metadata_elem *md_elem;
-            struct packetHeaders pkt = {0};
-            md_elem = data + nh_off;
-
-            if (data + nh_off + sizeof(struct metadata_elem) > data_end) {
-                bpf_log_err("No metadata available in the current pkt\n");
-                goto DROP;
-            }
-
-            pkt.l4proto = md_elem->flow.protocol;
-            pkt.srcIp = md_elem->flow.src_ip;
-            pkt.dstIp = md_elem->flow.dst_ip;
-            pkt.srcPort = md_elem->flow.src_port;
-            pkt.dstPort = md_elem->flow.dst_port;
-
-            pkt.ackN = md_elem->info.ackN;
-            pkt.seqN = md_elem->info.seqN;
-            pkt.flags = md_elem->info.flags;
-            pkt.timestamp = md_elem->info.timestamp;
-
-            uint8_t local_ipRev = 0;
-            uint8_t local_portRev = 0;
-            // This is a trick to ensure the first N packets are skipped
-            if (pkt.l4proto == 0) {
-                bpf_log_debug("Skip this packet since the info are 0ed\n");
-                return 0;
-            } else {
-                struct ct_k local_key = {0};
-                conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
-
-                if (memcmp(&local_key, &curr_pkt_key, sizeof(curr_pkt_key)) == 0) {
-                    bpf_log_debug("Pkt has same key has current packet, use local variable");
-                    if (!curr_value_set) {
-                        map_curr_value = cuckoo_connections_cuckoo_lookup(cuckoo_map, &local_key);
-                        if (map_curr_value) {
-                            memcpy(&curr_value, map_curr_value, sizeof(curr_value));
-                            curr_value_set = true;
-                        }
-                    }
-                    // Keys are equals, we have same connection as current pkt
-                    ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev,
-                                                          &local_portRev, &curr_value,
-                                                          &curr_value_set);
-                    if (ret < 0) {
-                        bpf_log_err("Received not TCP packet");
-                        goto PASS_ACTION;
-                    }
-                } else {
-                    ret = advance_tcp_state_machine_full(cuckoo_map, &pkt, &local_ipRev, &local_portRev);
-                    if (ret < 0) {
-                        bpf_log_err("Received not TCP packet");
-                        goto PASS_ACTION;
-                    }
-                }
-            }
-        }
-
-    PASS_ACTION:;
-        nh_off += sizeof(struct metadata_elem);
-        continue;
+    if (loop_ctx.ret_code == DROP_CTX) {
+        goto DROP;
     }
 
 PASS_ACTION_FINAL:;
