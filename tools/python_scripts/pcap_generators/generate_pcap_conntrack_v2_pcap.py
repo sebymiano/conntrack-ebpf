@@ -112,6 +112,12 @@ are coded in the script file itself."""
                         type=int,
                         default=0,
                         help="Number of cores")
+    parser.add_argument(
+        '-r',
+        '--rss',
+        action='store_true',
+        help=
+        "Increase MAC address for every packet in order to use RSS on the NIC")
 
     args = parser.parse_args()
 
@@ -121,6 +127,7 @@ are coded in the script file itself."""
 
     version = args.version
     num_cores = args.num_cores
+    use_mac_for_rss = args.rss
 
     src_mac = args.src_mac
     dst_mac = args.dst_mac
@@ -192,7 +199,11 @@ are coded in the script file itself."""
             md_elem_bytes += bytes(md_elem)
 
         payload = md_elem_bytes
-        new_pkt = Ether(dst = dst_mac, src = src_mac, type=0x800)/ \
+        if use_mac_for_rss:
+            new_dst_mac = helpers.change_mac(helpers.mac_del_colons(dst_mac), i % num_cores)
+        else:
+            new_dst_mac = dst_mac
+        new_pkt = Ether(dst = new_dst_mac, src = src_mac, type=0x800)/ \
                   Raw(load=payload)/ \
                   curr_pkt
 
