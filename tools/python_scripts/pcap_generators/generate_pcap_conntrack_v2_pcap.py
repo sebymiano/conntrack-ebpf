@@ -191,7 +191,7 @@ are coded in the script file itself."""
 
             md_elem_bytes += bytes(md_elem)
 
-        payload = md_elem_bytes + bytes(curr_pkt.payload)
+        payload = md_elem_bytes
         new_pkt = Ether(dst = dst_mac, src = src_mac, type=0x800)/ \
                   Raw(load=payload)/ \
                   curr_pkt
