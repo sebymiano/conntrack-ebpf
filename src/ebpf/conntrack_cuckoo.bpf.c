@@ -288,6 +288,7 @@ static __always_inline int advance_tcp_state_machine_full(struct cuckoo_connecti
     if (pkt->l4proto == IPPROTO_TCP) {
         // If it is a RST, label it as established.
         if ((pkt->flags & TCPHDR_RST) != 0) {
+            // cuckoo_connections_cuckoo_delete(cuckoo_map, &key);
             // connections.delete(&key);
             return PASS_ACTION;
         }
@@ -300,10 +301,14 @@ static __always_inline int advance_tcp_state_machine_full(struct cuckoo_connecti
             } else if ((value->ipRev != *ipRev) && (value->portRev != *portRev)) {
                 reverse = true;
             } else {
+                bpf_log_debug("ERROR: IPRev and PortRev are not "
+                              "consistent. IPRev: %d. PortRev: %d\n",
+                              *ipRev, *portRev);
                 goto TCP_MISS;
             }
             action = handle_tcp_conntrack(pkt, value, pkt->timestamp, reverse);
             if (action == TCP_NEW) {
+                bpf_log_debug("TCP_NEW\n");
                 goto TCP_MISS;
             } else {
                 return PASS_ACTION;
@@ -320,13 +325,16 @@ static __always_inline int advance_tcp_state_machine_full(struct cuckoo_connecti
             newEntry.ipRev = *ipRev;
             newEntry.portRev = *portRev;
 
+            bpf_log_debug("New TCP connection. Seq: %u. "
+                          "Ack: %u. Flags: %x\n",
+                          pkt->seqN, pkt->ackN, pkt->flags);
             cuckoo_connections_cuckoo_insert(cuckoo_map, &key, &newEntry);
             // bpf_map_update_elem(&connections, &key, &newEntry, BPF_ANY);
             return PASS_ACTION;
         } else {
             // Validation failed
             bpf_log_debug("Validation failed %d\n", pkt->flags);
-            return -1;
+            return -2;
         }
     }
 
@@ -352,11 +360,13 @@ advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt, uin
             } else if ((value->ipRev != *ipRev) && (value->portRev != *portRev)) {
                 reverse = true;
             } else {
+                bpf_log_debug("Reverse check failed. Goto TCP_MISS\n");
                 goto TCP_MISS;
             }
 
             action = handle_tcp_conntrack(pkt, value, pkt->timestamp, reverse);
             if (action == TCP_NEW) {
+                bpf_log_debug("TCP_NEW. Goto TCP_MISS\n");
                 goto TCP_MISS;
             } else {
                 return PASS_ACTION;
@@ -380,7 +390,7 @@ advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt, uin
         } else {
             // Validation failed
             bpf_log_debug("Validation failed %d\n", pkt->flags);
-            return -1;
+            return -2;
         }
     }
 
@@ -403,30 +413,35 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             ctx->curr_pkt.timestamp = bpf_ktime_get_ns();
         }
 
-        bpf_log_debug("Current value is not NULL, this means other packets in the md had "
-                        "same connection as current one");
-        // Keys are equals, we have same connection as current pkt
-        ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt, &ctx->curr_ipRev,
-                                              &ctx->curr_portRev, &ctx->curr_value, &ctx->curr_value_set);
-        if (ret < 0) {
-            bpf_log_err("Received not TCP packet (id: %d)", index);
-            ctx->ret_code = PASS_ACTION_FINAL_CTX;
-            return 1;
-        }
-
-        if (ret == TCP_NEW || ctx->map_curr_value == NULL) {
-            bpf_log_debug("Create new entry in the map");
-            struct ct_k curr_pkt_key_test;
-            __bpf_memcpy_builtin(&curr_pkt_key_test, &ctx->curr_pkt_key, sizeof(struct ct_k));
-            cuckoo_connections_cuckoo_insert(ctx->cuckoo_map, &curr_pkt_key_test, &ctx->curr_value);
+        if (!ctx->curr_value_set) {
+            // We have not seen this connection before
+            ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &ctx->curr_pkt, &ctx->curr_ipRev, &ctx->curr_portRev);
+            if (ret < 0) {
+                bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
+            }
         } else {
-            if (ctx->map_curr_value != NULL) {
-                bpf_log_debug("Update existing map entry");
-                ctx->map_curr_value->ipRev = ctx->curr_value.ipRev;
-                ctx->map_curr_value->portRev = ctx->curr_value.portRev;
-                ctx->map_curr_value->sequence = ctx->curr_value.sequence;
-                ctx->map_curr_value->ttl = ctx->curr_value.ttl;
-                ctx->map_curr_value->state = ctx->curr_value.state;
+            ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt, &ctx->curr_ipRev,
+                                                &ctx->curr_portRev, &ctx->curr_value, &ctx->curr_value_set);
+            if (ret < 0) {
+                bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
+                ctx->ret_code = PASS_ACTION_FINAL_CTX;
+                return 1;
+            }
+
+            if (ret == TCP_NEW || ctx->map_curr_value == NULL) {
+                bpf_log_debug("Create new entry in the map");
+                struct ct_k curr_pkt_key_test;
+                __bpf_memcpy_builtin(&curr_pkt_key_test, &ctx->curr_pkt_key, sizeof(struct ct_k));
+                cuckoo_connections_cuckoo_insert(ctx->cuckoo_map, &curr_pkt_key_test, &ctx->curr_value);
+            } else {
+                if (ctx->map_curr_value != NULL) {
+                    bpf_log_debug("Update existing map entry");
+                    ctx->map_curr_value->ipRev = ctx->curr_value.ipRev;
+                    ctx->map_curr_value->portRev = ctx->curr_value.portRev;
+                    ctx->map_curr_value->sequence = ctx->curr_value.sequence;
+                    ctx->map_curr_value->ttl = ctx->curr_value.ttl;
+                    ctx->map_curr_value->state = ctx->curr_value.state;
+                }
             }
         }
         // This is the last pkt
@@ -479,13 +494,13 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                                                         &local_portRev, &ctx->curr_value,
                                                         &ctx->curr_value_set);
                 if (ret < 0) {
-                    bpf_log_err("Received not TCP packet");
+                    bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                     goto PASS_ACTION;
                 }
             } else {
                 ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &pkt, &local_ipRev, &local_portRev);
                 if (ret < 0) {
-                    bpf_log_err("Received not TCP packet");
+                    bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
                     goto PASS_ACTION;
                 }
             }
@@ -501,6 +516,7 @@ SEC("xdp")
 int xdp_conntrack_prog(struct xdp_md *ctx) {
     int rc;
     __u16 nh_off = 0;
+    __u16 nh_off_md = 0;
     __u16 h_proto;
     __u32 md_size;
     uint32_t zero = 0;
@@ -546,9 +562,9 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
         bpf_log_err("No metadata available in the current pkt\n");
         goto DROP;
     }
-
+    nh_off_md = nh_off;
     nh_off += md_size;
-
+    bpf_log_debug("nh_off: %d\n", nh_off);
     rc = parse_packet(data, data_end, &loop_ctx.curr_pkt, &nh_off);
 
     if (rc < 0) {
@@ -558,7 +574,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev, &loop_ctx.curr_portRev);
 
-    loop_ctx.nh_off = nh_off;
+    loop_ctx.nh_off = nh_off_md;
     bpf_loop(conntrack_cfg.num_pkts, &metadata_processing_loop, &loop_ctx, 0);
 
     if (loop_ctx.ret_code == DROP_CTX) {

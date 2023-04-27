@@ -95,6 +95,8 @@ static int parse_packet(void *data, void *data_end, struct packetHeaders *pkt, _
         goto DROP;
     }
 
+    bpf_log_debug("L3 protocol: %d\n", l3_proto);
+
     switch (l3_proto) {
     case bpf_htons(ETH_P_IP):
         goto IP; // ipv4 packet
