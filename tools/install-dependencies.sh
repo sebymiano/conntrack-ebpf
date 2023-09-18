@@ -46,13 +46,34 @@ function install_linux_bpftool {
 
 [ -z ${SUDO+x} ] && SUDO='sudo'
 
+# check which ubuntu version we are running
+UBUNTU_VERSION=$(lsb_release -rs)
+
+
 $SUDO apt update
 PACKAGES=""
-PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev libssl-dev libbfd-dev libpcap-dev libcap-dev"
-PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime g++-multilib"
+PACKAGES+=" build-essential cmake linux-headers-$(uname -r) libelf-dev libssl-dev libbfd-dev libpcap-dev libcap-dev g++-multilib"
 PACKAGES+=" pkg-config net-tools bash tcpreplay gnupg gnupg2 gpgv2 curl flex bison" # utility libraries
 PACKAGES+=" libnl-3-dev clang python3-pip gnupg2" 
 
+# if Ubuntu is 20.04, we need to install different llvm version
+if [[ "${UBUNTU_VERSION}" == "20.04" ]]; then
+  echo -e "${COLOR_GREEN} Installing LLVM 18 ${COLOR_OFF}"
+  $SUDO bash -c "wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"
+  $SUDO bash -c "echo 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal main' >> /etc/apt/sources.list"
+  $SUDO bash -c "echo 'deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal main' >> /etc/apt/sources.list"
+  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
+elif [[ "${UBUNTU_VERSION}" == "22.04" ]]; then
+  echo -e "${COLOR_GREEN} Installing LLVM 18 ${COLOR_OFF}"
+  $SUDO bash -c "wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"
+  $SUDO bash -c "echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main' >> /etc/apt/sources.list"
+  $SUDO bash -c "echo 'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy main' >> /etc/apt/sources.list"
+  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
+else
+  PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime "
+fi
+
+$SUDO apt update
 $SUDO bash -c "DEBIAN_FRONTEND=noninteractive apt-get install -yq $PACKAGES"
 
 

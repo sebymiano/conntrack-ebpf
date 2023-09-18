@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 OUTPUT := .output
-CLANG ?= clang
+CLANG ?= clang-18
 LLVM_STRIP ?= llvm-strip
 SHELL := /bin/bash
 PKG_CONFIG := pkg-config

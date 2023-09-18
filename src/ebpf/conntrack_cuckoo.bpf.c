@@ -259,9 +259,7 @@ static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders
         ct_value->ttl = timestamp + TCP_LAST_ACK;
 
         return PASS_ACTION;
-    } else
-
-        if (ct_value->state == TIME_WAIT) {
+    } else if (ct_value->state == TIME_WAIT) {
         if (pkt->connStatus == NEW) {
             return TCP_NEW;
         } else {
