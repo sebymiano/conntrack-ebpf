@@ -67,7 +67,7 @@ static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
     int tot_duration = 0;
 
     if (out_fp != NULL) {
-        fprintf(out_fp,"Seconds,RX-packets,RX-bytes\n");
+        fprintf(out_fp, "Seconds,RX-packets,RX-bytes\n");
     }
     while (1) {
         __u32 key = 0;
@@ -93,10 +93,10 @@ static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
 
         if (sum[0] > prev[0] && sum[1] > prev[1]) {
             if (out_fp != NULL) {
-                fprintf(out_fp,"%d,%.2f,%.2f\n", tot_duration, rate, bit_rate);
+                fprintf(out_fp, "%d,%.2f,%.2f\n", tot_duration, rate, bit_rate);
             }
         }
-        
+
         prev[0] = sum[0];
         prev[1] = sum[1];
         tot_duration++;
@@ -118,6 +118,7 @@ int main(int argc, const char **argv) {
     int duration = -1;
     int redirect_same_iface = 0;
     int quiet = 0;
+    int enable_flow_affinity = 0;
 
     // Disabled by default
     int log_level = 0;
@@ -145,8 +146,9 @@ int main(int argc, const char **argv) {
         OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
                     NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
-                OPT_STRING('o', "out_file", &output_file,
-                   "Save results into an output csv file", NULL, 0, 0),
+        OPT_STRING('o', "out_file", &output_file, "Save results into an output csv file", NULL, 0,
+                   0),
+        OPT_BOOLEAN('f', "flow_affinity", &enable_flow_affinity, "Enable Flow Affinity mode", NULL, 0, 0),
         OPT_END(),
     };
 
@@ -166,6 +168,14 @@ int main(int argc, const char **argv) {
         log_trace("Promiscuous mode is ENABLED");
     } else {
         log_trace("Promiscuous mode is DISABLED");
+    }
+
+    if (enable_flow_affinity) {
+        log_trace("Flow Affinity mode is ENABLED");
+        num_cores = 1;
+        log_trace("The number of cores is set to %d, and no metadata are used", num_cores);
+    } else {
+        log_trace("Flow Affinity mode is DISABLED");
     }
 
     log_trace("Number of CORES is set to %d", num_cores);
@@ -267,6 +277,7 @@ int main(int argc, const char **argv) {
     skel->rodata->conntrack_cfg.if_index_if1 = ifindex_if1;
     skel->rodata->conntrack_cfg.if_index_if2 = ifindex_if2;
     skel->rodata->conntrack_cfg.enable_spin_locks = 0;
+    skel->rodata->conntrack_cfg.enable_flow_affinity = enable_flow_affinity;
     skel->rodata->conntrack_cfg.num_pkts = num_cores;
     skel->rodata->conntrack_cfg.redirect_same_iface = redirect_same_iface;
     skel->rodata->conntrack_cfg.quiet = quiet;

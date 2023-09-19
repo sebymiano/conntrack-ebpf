@@ -273,8 +273,9 @@ static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders
     return PASS_ACTION;
 }
 
-static __always_inline int advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo_map, struct packetHeaders *pkt, uint8_t *ipRev,
-                                                          uint8_t *portRev) {
+static __always_inline int
+advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo_map,
+                               struct packetHeaders *pkt, uint8_t *ipRev, uint8_t *portRev) {
     struct ct_v *value;
     struct ct_v newEntry = {0};
     struct ct_k key = {0};
@@ -413,13 +414,15 @@ static int metadata_processing_loop(uint32_t index, void *data) {
 
         if (!ctx->curr_value_set) {
             // We have not seen this connection before
-            ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &ctx->curr_pkt, &ctx->curr_ipRev, &ctx->curr_portRev);
+            ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &ctx->curr_pkt, &ctx->curr_ipRev,
+                                                 &ctx->curr_portRev);
             if (ret < 0) {
                 bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
             }
         } else {
-            ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt, &ctx->curr_ipRev,
-                                                &ctx->curr_portRev, &ctx->curr_value, &ctx->curr_value_set);
+            ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt,
+                                                  &ctx->curr_ipRev, &ctx->curr_portRev,
+                                                  &ctx->curr_value, &ctx->curr_value_set);
             if (ret < 0) {
                 bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                 ctx->ret_code = PASS_ACTION_FINAL_CTX;
@@ -430,7 +433,8 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                 bpf_log_debug("Create new entry in the map");
                 struct ct_k curr_pkt_key_test;
                 __bpf_memcpy_builtin(&curr_pkt_key_test, &ctx->curr_pkt_key, sizeof(struct ct_k));
-                cuckoo_connections_cuckoo_insert(ctx->cuckoo_map, &curr_pkt_key_test, &ctx->curr_value);
+                cuckoo_connections_cuckoo_insert(ctx->cuckoo_map, &curr_pkt_key_test,
+                                                 &ctx->curr_value);
             } else {
                 if (ctx->map_curr_value != NULL) {
                     bpf_log_debug("Update existing map entry");
@@ -478,25 +482,28 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             struct ct_k local_key = {0};
             conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
 
-            if (__bpf_memcmp_builtin(&local_key, &ctx->curr_pkt_key, sizeof(ctx->curr_pkt_key)) == 0) {
+            if (__bpf_memcmp_builtin(&local_key, &ctx->curr_pkt_key, sizeof(ctx->curr_pkt_key)) ==
+                0) {
                 bpf_log_debug("Pkt has same key has current packet, use local variable");
                 if (!ctx->curr_value_set) {
-                    ctx->map_curr_value = cuckoo_connections_cuckoo_lookup(ctx->cuckoo_map, &local_key);
+                    ctx->map_curr_value =
+                        cuckoo_connections_cuckoo_lookup(ctx->cuckoo_map, &local_key);
                     if (ctx->map_curr_value) {
                         memcpy(&ctx->curr_value, ctx->map_curr_value, sizeof(ctx->curr_value));
                         ctx->curr_value_set = true;
                     }
                 }
                 // Keys are equals, we have same connection as current pkt
-                ret = advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev,
-                                                        &local_portRev, &ctx->curr_value,
-                                                        &ctx->curr_value_set);
+                ret =
+                    advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev, &local_portRev,
+                                                    &ctx->curr_value, &ctx->curr_value_set);
                 if (ret < 0) {
                     bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                     goto PASS_ACTION;
                 }
             } else {
-                ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &pkt, &local_ipRev, &local_portRev);
+                ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &pkt, &local_ipRev,
+                                                     &local_portRev);
                 if (ret < 0) {
                     bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
                     goto PASS_ACTION;
@@ -528,7 +535,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     bpf_log_debug("Received packet on interface.\n");
 
-    struct cuckoo_connections_cuckoo_hash_map *cuckoo_map = bpf_map_lookup_elem(&cuckoo_connections, &zero);
+    struct cuckoo_connections_cuckoo_hash_map *cuckoo_map =
+        bpf_map_lookup_elem(&cuckoo_connections, &zero);
     if (!cuckoo_map) {
         bpf_printk("cuckoo map not found");
         goto DROP;
@@ -536,24 +544,28 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     loop_ctx.cuckoo_map = cuckoo_map;
 
-    /* Given the new way we are formatting the packet, 
+    /* Given the new way we are formatting the packet,
      * we can skip the parsing at the beginning.
      *
      * We just need to do some bound checking
      * for Ethernet, then we will have the metadata
      */
 
-    if (!validate_ethertype(data, data_end, &h_proto, &nh_off)) {
-        bpf_log_err("Invalid ethertype\n");
-        goto DROP;
-    }
+    if (!conntrack_cfg.enable_flow_affinity) {
+        if (!validate_ethertype(data, data_end, &h_proto, &nh_off)) {
+            bpf_log_err("Invalid ethertype\n");
+            goto DROP;
+        }
 
-    if (h_proto != bpf_htons(ETH_P_IP)) {
-        bpf_log_err("Ethernet protocol on the fake Ethernet header is not IPv4\n");
-        goto DROP;
-    }
+        if (h_proto != bpf_htons(ETH_P_IP)) {
+            bpf_log_err("Ethernet protocol on the fake Ethernet header is not IPv4\n");
+            goto DROP;
+        }
 
-    bpf_log_debug("Packet parsed, now starting the conntrack.\n");
+        bpf_log_debug("Packet parsed, now starting the conntrack.\n");
+    } else {
+        bpf_log_debug("Flow Affinity ENABLED, skipping parsing of fake header\n");
+    }
 
     md_size = (conntrack_cfg.num_pkts - 1) * sizeof(struct metadata_elem);
     if (data + nh_off + md_size > data_end) {
@@ -570,7 +582,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
         goto DROP;
     }
 
-    conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev, &loop_ctx.curr_portRev);
+    conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev,
+                      &loop_ctx.curr_portRev);
 
     loop_ctx.nh_off = nh_off_md;
     bpf_loop(conntrack_cfg.num_pkts, &metadata_processing_loop, &loop_ctx, 0);

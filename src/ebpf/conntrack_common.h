@@ -61,6 +61,7 @@ const volatile struct {
     __u32 if_index_if2;
     __u8 enable_spin_locks;
     __u8 num_pkts;
+    __u8 enable_flow_affinity;
     __u8 redirect_same_iface;
     __u8 quiet;
 } conntrack_cfg = {};

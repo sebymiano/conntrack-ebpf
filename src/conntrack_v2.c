@@ -67,7 +67,7 @@ static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
     int tot_duration = 0;
 
     if (out_fp != NULL) {
-        fprintf(out_fp,"Seconds,RX-packets,RX-bytes\n");
+        fprintf(out_fp, "Seconds,RX-packets,RX-bytes\n");
     }
     while (1) {
         __u32 key = 0;
@@ -93,10 +93,10 @@ static void poll_stats(int map_fd, int interval, int duration, FILE *out_fp) {
 
         if (sum[0] > prev[0] && sum[1] > prev[1]) {
             if (out_fp != NULL) {
-                fprintf(out_fp,"%d,%.2f,%.2f\n", tot_duration, rate, bit_rate);
+                fprintf(out_fp, "%d,%.2f,%.2f\n", tot_duration, rate, bit_rate);
             }
         }
-        
+
         prev[0] = sum[0];
         prev[1] = sum[1];
         tot_duration++;
@@ -145,8 +145,8 @@ int main(int argc, const char **argv) {
         OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
                     NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
-                OPT_STRING('o', "out_file", &output_file,
-                   "Save results into an output csv file", NULL, 0, 0),
+        OPT_STRING('o', "out_file", &output_file, "Save results into an output csv file", NULL, 0,
+                   0),
         OPT_END(),
     };
 
