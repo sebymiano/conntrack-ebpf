@@ -196,55 +196,66 @@ static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders
             ct_value->ttl = timestamp + TCP_ESTABLISHED;
             return PASS_ACTION;
         }
-    } else if (ct_value->state == FIN_WAIT_1) {
-        // Received FIN in reverse direction, waiting for ack from this
-        // side
-        if ((pkt->flags & TCPHDR_ACK) != 0 && (pkt->seqN == ct_value->sequence)) {
-            // Received ACK
-            ct_value->state = FIN_WAIT_2;
-            ct_value->ttl = timestamp + TCP_FIN_WAIT;
+    }
+    
+    if (ct_value->state == FIN_WAIT_1) {
+        bpf_log_debug("Current state is FIN_WAIT_1\n");
+        bpf_log_debug("Reverse: %d\n", reverse);
+        if (reverse) {
+            // Received FIN, waiting for ack on the other side
+            if ((pkt->flags & TCPHDR_ACK) != 0 && (pkt->seqN == ct_value->sequence)) {
+                // Received ACK
+                ct_value->state = FIN_WAIT_2;
+                ct_value->ttl = timestamp + TCP_FIN_WAIT;
 
-            bpf_log_debug("[FW/RV_DIRECTION] Changing "
-                          "state from "
-                          "FIN_WAIT_1 to FIN_WAIT_2\n");
+                bpf_log_debug("[FW/RV_DIRECTION] Changing "
+                            "state from "
+                            "FIN_WAIT_1 to FIN_WAIT_2\n");
 
-        } else {
-            // Validation failed, either ACK is not the only flag set or
-            // the ack number is wrong
-            pkt->connStatus = INVALID;
+            } else {
+                // Validation failed, either ACK is not the only flag set or
+                // the ack number is wrong
+                pkt->connStatus = INVALID;
 
-            bpf_log_debug("[FW/RV_DIRECTION] Failed ACK "
-                          "check in "
-                          "FIN_WAIT_1 state. Flags: %x. AckSeq: %u\n",
-                          pkt->flags, pkt->ackN);
-            return PASS_ACTION;
+                bpf_log_debug("[FW/RV_DIRECTION] Failed ACK "
+                            "check in "
+                            "FIN_WAIT_1 state. Flags: %x. AckSeq: %u\n",
+                            pkt->flags, pkt->ackN);
+                return PASS_ACTION;
+            }
         }
-    } else if (ct_value->state == FIN_WAIT_2) {
-        // Already received and acked FIN in rev direction, waiting the
-        // FIN from the this side
-        if ((pkt->flags & TCPHDR_FIN) != 0) {
-            // FIN received. Let's wait for it to be acknowledged.
-            ct_value->state = LAST_ACK;
-            ct_value->ttl = timestamp + TCP_LAST_ACK;
-            ct_value->sequence = pkt->ackN;
+    } 
+    
+    if (ct_value->state == FIN_WAIT_2) {
+        if (reverse) {
+            // Already received and acked FIN in this direction, waiting the
+            // FIN from the other side
+            if ((pkt->flags & TCPHDR_FIN) != 0) {
+                // FIN received. Let's wait for it to be acknowledged.
+                ct_value->state = LAST_ACK;
+                ct_value->ttl = timestamp + TCP_LAST_ACK;
+                ct_value->sequence = pkt->ackN;
 
-            bpf_log_debug("[FW/RV_DIRECTION] Changing "
-                          "state from "
-                          "FIN_WAIT_2 to LAST_ACK\n");
+                bpf_log_debug("[FW/RV_DIRECTION] Changing "
+                            "state from "
+                            "FIN_WAIT_2 to LAST_ACK\n");
 
-            return PASS_ACTION;
-        } else {
-            // Still receiving packets
-            ct_value->ttl = timestamp + TCP_FIN_WAIT;
+                return PASS_ACTION;
+            } else {
+                // Still receiving packets
+                ct_value->ttl = timestamp + TCP_FIN_WAIT;
 
-            bpf_log_debug("[FW/RV_DIRECTION] Failed FIN "
-                          "check in "
-                          "FIN_WAIT_2 state. Flags: %x. Seq: %u\n",
-                          pkt->flags, ct_value->sequence);
+                bpf_log_debug("[FW/RV_DIRECTION] Failed FIN "
+                            "check in "
+                            "FIN_WAIT_2 state. Flags: %x. Seq: %u\n",
+                            pkt->flags, ct_value->sequence);
 
-            return PASS_ACTION;
+                return PASS_ACTION;
+            }
         }
-    } else if (ct_value->state == LAST_ACK) {
+    } 
+    
+    if (ct_value->state == LAST_ACK) {
         if ((pkt->flags & TCPHDR_ACK && pkt->seqN == ct_value->sequence) != 0) {
             // Ack to the last FIN.
             ct_value->state = TIME_WAIT;
@@ -259,7 +270,9 @@ static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders
         ct_value->ttl = timestamp + TCP_LAST_ACK;
 
         return PASS_ACTION;
-    } else if (ct_value->state == TIME_WAIT) {
+    } 
+    
+    if (ct_value->state == TIME_WAIT) {
         if (pkt->connStatus == NEW) {
             return TCP_NEW;
         } else {
@@ -282,7 +295,9 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
     bool reverse = false;
 
     conntrack_get_key(&key, pkt, ipRev, portRev);
-
+    bpf_log_debug("Key is: %u %u %u %u %u\n", key.srcIp, key.dstIp, key.srcPort, key.dstPort,
+                  key.l4proto);
+    bpf_log_debug("IPRev: %u. PortRev: %u\n", *ipRev, *portRev);
     /* == TCP  == */
     if (pkt->l4proto == IPPROTO_TCP) {
         // If it is a RST, label it as established.
@@ -291,9 +306,11 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
             // connections.delete(&key);
             return PASS_ACTION;
         }
+        bpf_log_debug("Checking value in the map\n");
         value = cuckoo_connections_cuckoo_lookup(cuckoo_map, &key);
         // value = bpf_map_lookup_elem(&connections, &key);
         if (value != NULL) {
+            bpf_log_debug("Value found in the map\n");
             return_action_t action;
             if ((value->ipRev == *ipRev) && (value->portRev == *portRev)) {
                 reverse = false;
@@ -310,12 +327,15 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
                 bpf_log_debug("TCP_NEW\n");
                 goto TCP_MISS;
             } else if (action == PASS_ACTION && value->state == TIME_WAIT) {
+                bpf_log_debug("Remove connection from the map\n");
                 cuckoo_connections_cuckoo_delete(cuckoo_map, &key);
                 return PASS_ACTION;
             } else {
                 return PASS_ACTION;
             }
         }
+
+        bpf_log_debug("Value not found in the map\n");
 
     TCP_MISS:;
         // New entry. It has to be a SYN.
@@ -330,6 +350,7 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
             bpf_log_debug("New TCP connection. Seq: %u. "
                           "Ack: %u. Flags: %x\n",
                           pkt->seqN, pkt->ackN, pkt->flags);
+            bpf_log_debug("Current state is SYN_SENT\n");
             cuckoo_connections_cuckoo_insert(cuckoo_map, &key, &newEntry);
             // bpf_map_update_elem(&connections, &key, &newEntry, BPF_ANY);
             return PASS_ACTION;
@@ -371,6 +392,7 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
                 bpf_log_debug("TCP_NEW. Goto TCP_MISS\n");
                 goto TCP_MISS;
             } else if (action == PASS_ACTION && value->state == TIME_WAIT) {
+                bpf_log_debug("Remove connection from the map\n");
                 cuckoo_connections_cuckoo_delete(cuckoo_map, key);
                 *curr_value_set = false;
                 return PASS_ACTION;
