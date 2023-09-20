@@ -255,6 +255,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     bpf_log_debug("[FW_DIRECTION] Changing "
                                   "state from "
                                   "LAST_ACK to TIME_WAIT\n");
+                    bpf_map_delete_elem(&connections, &key);
                     goto PASS_ACTION;
                 }
                 // Still receiving packets
@@ -407,7 +408,7 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
                     bpf_log_debug("[REV_DIRECTION] Changing "
                                   "state from "
                                   "LAST_ACK to TIME_WAIT\n");
-
+                    bpf_map_delete_elem(&connections, &key);
                     goto PASS_ACTION;
                 }
                 // Still receiving packets
