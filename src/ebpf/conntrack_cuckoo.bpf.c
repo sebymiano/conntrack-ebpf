@@ -68,13 +68,17 @@ struct metadata_processing_loop_ctx {
     uint8_t curr_portRev;
     struct ct_k curr_pkt_key;
     struct ct_v curr_value;
-    bool curr_value_set;
     struct ct_v *map_curr_value;
     struct cuckoo_connections_cuckoo_hash_map *cuckoo_map;
     int ret_code;
+    uint32_t curr_value_set;
 };
 
-typedef enum return_action { PASS_ACTION = 0, TCP_NEW } return_action_t;
+typedef enum return_action { 
+    PASS_ACTION = 0, 
+    PASS_ACTION_DEL_VALUE,
+    TCP_NEW 
+} return_action_t;
 
 static __always_inline void conntrack_get_key(struct ct_k *key, const struct packetHeaders *pkt,
                                               uint8_t *ipRev, uint8_t *portRev) {
@@ -109,10 +113,13 @@ static __always_inline void conntrack_get_key(struct ct_k *key, const struct pac
     key->l4proto = pkt->l4proto;
 }
 
-static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders *pkt,
+static return_action_t handle_tcp_conntrack(struct packetHeaders *pkt,
                                                             struct ct_v *ct_value,
                                                             uint64_t timestamp, bool reverse) {
+    bpf_log_debug("Handling TCP conntrack. Current state: %u\n", ct_value->state);
+    bpf_log_debug("Reverse: %d\n", reverse);
     if (ct_value->state == SYN_SENT) {
+        bpf_log_debug("Received packet in SYN_SENT state\n");
         if (!reverse) {
             // Still haven't received a SYN,ACK To the SYN
             if ((pkt->flags & TCPHDR_SYN) != 0 && (pkt->flags | TCPHDR_SYN) == TCPHDR_SYN) {
@@ -121,6 +128,8 @@ static __always_inline return_action_t handle_tcp_conntrack(struct packetHeaders
                 return PASS_ACTION;
             }
         } else {
+            bpf_log_debug("pkt ackN: %u\n", pkt->ackN);
+            bpf_log_debug("ct_value sequence: %u\n", ct_value->sequence);
             // This should be a SYN, ACK answer
             if ((pkt->flags & TCPHDR_ACK) != 0 && (pkt->flags & TCPHDR_SYN) != 0 &&
                 (pkt->flags | (TCPHDR_SYN | TCPHDR_ACK)) == (TCPHDR_SYN | TCPHDR_ACK) &&
@@ -367,8 +376,12 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
 
 static __always_inline int
 advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cuckoo_map, struct ct_k *key, struct packetHeaders *pkt, uint8_t *ipRev,
-                                uint8_t *portRev, struct ct_v *value, bool *curr_value_set) {
+                                uint8_t *portRev, struct ct_v *value, uint32_t curr_value_set) {
     bool reverse = false;
+
+    bpf_log_debug("Key is: %u %u %u %u %u\n", key->srcIp, key->dstIp, key->srcPort, key->dstPort,
+                  key->l4proto);
+    bpf_log_debug("IPRev: %u. PortRev: %u\n", *ipRev, *portRev);
     /* == TCP  == */
     if (pkt->l4proto == IPPROTO_TCP) {
         // If it is a RST, label it as established.
@@ -376,7 +389,8 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
             // connections.delete(&key);
             return PASS_ACTION;
         }
-        if (value != NULL && *curr_value_set) {
+        if (value != NULL && curr_value_set) {
+            bpf_log_debug("advance_tcp_state_machine_local: Value found in the map\n");
             return_action_t action;
             if ((value->ipRev == *ipRev) && (value->portRev == *portRev)) {
                 reverse = false;
@@ -387,6 +401,7 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
                 goto TCP_MISS;
             }
 
+            bpf_log_debug("Running conntrack, reverse: %u\n", reverse);
             action = handle_tcp_conntrack(pkt, value, pkt->timestamp, reverse);
             if (action == TCP_NEW) {
                 bpf_log_debug("TCP_NEW. Goto TCP_MISS\n");
@@ -394,8 +409,8 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
             } else if (action == PASS_ACTION && value->state == TIME_WAIT) {
                 bpf_log_debug("Remove connection from the map\n");
                 cuckoo_connections_cuckoo_delete(cuckoo_map, key);
-                *curr_value_set = false;
-                return PASS_ACTION;
+                // *curr_value_set = false;
+                return PASS_ACTION_DEL_VALUE;
             } else {
                 return PASS_ACTION;
             }
@@ -408,12 +423,14 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
             value->ttl = pkt->timestamp + TCP_SYN_SENT;
             value->sequence = pkt->seqN + HEX_BE_ONE;
 
+            bpf_log_debug("New sequence number is: %u\n", value->sequence);
+
             value->ipRev = *ipRev;
             value->portRev = *portRev;
 
             // bpf_map_update_elem(&connections, key, &newEntry, BPF_ANY);
             bpf_log_debug("New connection, setting local variable\n");
-            *curr_value_set = true;
+            // *curr_value_set = true;
             return TCP_NEW;
         } else {
             // Validation failed
@@ -433,6 +450,15 @@ advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cucko
 static int metadata_processing_loop(uint32_t index, void *data) {
     struct metadata_processing_loop_ctx *ctx = (struct metadata_processing_loop_ctx *)data;
     int ret;
+
+    uint32_t *value_set;
+    uint32_t value_set_key = 0;
+    value_set = bpf_map_lookup_elem(&metadata_loop, &value_set_key);
+    if (value_set == NULL) {
+        bpf_log_debug("Value set not found in the map\n");
+        return 1;
+    }
+
     if (index == (conntrack_cfg.num_pkts - 1)) {
         bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", index);
         if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
@@ -441,7 +467,18 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             ctx->curr_pkt.timestamp = bpf_ktime_get_ns();
         }
 
-        if (!ctx->curr_value_set) {
+        // value_set = ctx->curr_value_set;
+        // // __bpf_memcpy_builtin(&value_set, &ctx->curr_value_set, sizeof(value_set));
+        // bpf_log_debug("New value_set: %d", value_set);
+        // if (value_set == 1) {
+        //     bpf_log_debug("Value set, running local algorithm\n");
+        // } else {
+        //     bpf_log_debug("Value not set, running full algorithm\n");
+        // }
+        // bpf_log_debug("New curr_value_set: %d", ctx->curr_value_set);
+
+        if (*value_set == 0) {
+            bpf_log_debug("Value not set, running full algorithm\n");
             // We have not seen this connection before
             ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &ctx->curr_pkt, &ctx->curr_ipRev,
                                                  &ctx->curr_portRev);
@@ -449,13 +486,25 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                 bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
             }
         } else {
+            bpf_log_debug("Current value state: %u", ctx->curr_value.state);
+            bpf_log_debug("Current value ipRev: %u", ctx->curr_value.ipRev);
+            bpf_log_debug("Current value portRev: %u", ctx->curr_value.portRev);
+            bpf_log_debug("Current value sequence: %u", ctx->curr_value.sequence);
+            bpf_log_debug("Current value ttl: %u", ctx->curr_value.ttl);
+
             ret = advance_tcp_state_machine_local(ctx->cuckoo_map, &ctx->curr_pkt_key, &ctx->curr_pkt,
                                                   &ctx->curr_ipRev, &ctx->curr_portRev,
-                                                  &ctx->curr_value, &ctx->curr_value_set);
+                                                  &ctx->curr_value, *value_set);
             if (ret < 0) {
                 bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                 ctx->ret_code = PASS_ACTION_FINAL_CTX;
                 return 1;
+            }
+
+            if (ret == TCP_NEW) {
+                *value_set = 1;
+            } else if (ret == PASS_ACTION_DEL_VALUE) {
+                *value_set = 0;
             }
 
             if (ret == TCP_NEW || ctx->map_curr_value == NULL) {
@@ -511,21 +560,31 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             struct ct_k local_key = {0};
             conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
 
-            if (__bpf_memcmp_builtin(&local_key, &ctx->curr_pkt_key, sizeof(ctx->curr_pkt_key)) ==
-                0) {
+            if (local_key.srcIp == ctx->curr_pkt_key.srcIp && local_key.dstIp == ctx->curr_pkt_key.dstIp && 
+                local_key.srcPort == ctx->curr_pkt_key.srcPort && local_key.dstPort == ctx->curr_pkt_key.dstPort &&
+                local_key.l4proto == ctx->curr_pkt_key.l4proto) {
                 bpf_log_debug("Pkt has same key has current packet, use local variable");
-                if (!ctx->curr_value_set) {
+                bpf_log_debug("Curr_value_set: %d", *value_set);
+                if (*value_set == 0) {
+                    bpf_log_debug("Lookup entry in the map");
                     ctx->map_curr_value =
                         cuckoo_connections_cuckoo_lookup(ctx->cuckoo_map, &local_key);
                     if (ctx->map_curr_value) {
+                        bpf_log_debug("Setting map_curr_value");
                         memcpy(&ctx->curr_value, ctx->map_curr_value, sizeof(ctx->curr_value));
-                        ctx->curr_value_set = true;
+                        *value_set = 1;
                     }
                 }
                 // Keys are equals, we have same connection as current pkt
                 ret =
                     advance_tcp_state_machine_local(ctx->cuckoo_map, &local_key, &pkt, &local_ipRev, &local_portRev,
-                                                    &ctx->curr_value, &ctx->curr_value_set);
+                                                    &ctx->curr_value, *value_set);
+                if (ret == TCP_NEW) {
+                    *value_set = 1;
+                } else if (ret == PASS_ACTION_DEL_VALUE) {
+                    *value_set = 0;
+                }
+                bpf_log_debug("Curr_value_set: %d", *value_set);
                 if (ret < 0) {
                     bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                     goto PASS_ACTION;
@@ -613,6 +672,14 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev,
                       &loop_ctx.curr_portRev);
+
+    uint32_t value_set_key = 0;
+    uint32_t *value_set = bpf_map_lookup_elem(&metadata_loop, &value_set_key);
+    if (value_set == NULL) {
+        bpf_log_debug("Value set not found in the map\n");
+        return 1;
+    }
+    *value_set = 0;
 
     loop_ctx.nh_off = nh_off_md;
     bpf_loop(conntrack_cfg.num_pkts, &metadata_processing_loop, &loop_ctx, 0);
