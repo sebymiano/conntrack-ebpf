@@ -66,12 +66,12 @@ struct metadata_processing_loop_ctx {
     __u16 nh_off;
     uint8_t curr_ipRev;
     uint8_t curr_portRev;
+    uint8_t curr_value_set;
     struct ct_k curr_pkt_key;
     struct ct_v curr_value;
     struct ct_v *map_curr_value;
     struct cuckoo_connections_cuckoo_hash_map *cuckoo_map;
     int ret_code;
-    uint32_t curr_value_set;
 };
 
 typedef enum return_action { 
@@ -451,14 +451,6 @@ static int metadata_processing_loop(uint32_t index, void *data) {
     struct metadata_processing_loop_ctx *ctx = (struct metadata_processing_loop_ctx *)data;
     int ret;
 
-    uint32_t *value_set;
-    uint32_t value_set_key = 0;
-    value_set = bpf_map_lookup_elem(&metadata_loop, &value_set_key);
-    if (value_set == NULL) {
-        bpf_log_debug("Value set not found in the map\n");
-        return 1;
-    }
-
     if (index == (conntrack_cfg.num_pkts - 1)) {
         bpf_log_debug("Dealing with pkt: %i taken from current packet info.\n", index);
         if (LINUX_KERNEL_VERSION >= KERNEL_VERSION(5, 16, 0)) {
@@ -467,17 +459,7 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             ctx->curr_pkt.timestamp = bpf_ktime_get_ns();
         }
 
-        // value_set = ctx->curr_value_set;
-        // // __bpf_memcpy_builtin(&value_set, &ctx->curr_value_set, sizeof(value_set));
-        // bpf_log_debug("New value_set: %d", value_set);
-        // if (value_set == 1) {
-        //     bpf_log_debug("Value set, running local algorithm\n");
-        // } else {
-        //     bpf_log_debug("Value not set, running full algorithm\n");
-        // }
-        // bpf_log_debug("New curr_value_set: %d", ctx->curr_value_set);
-
-        if (*value_set == 0) {
+        if (ctx->curr_value_set == 0) {
             bpf_log_debug("Value not set, running full algorithm\n");
             // We have not seen this connection before
             ret = advance_tcp_state_machine_full(ctx->cuckoo_map, &ctx->curr_pkt, &ctx->curr_ipRev,
@@ -494,7 +476,7 @@ static int metadata_processing_loop(uint32_t index, void *data) {
 
             ret = advance_tcp_state_machine_local(ctx->cuckoo_map, &ctx->curr_pkt_key, &ctx->curr_pkt,
                                                   &ctx->curr_ipRev, &ctx->curr_portRev,
-                                                  &ctx->curr_value, *value_set);
+                                                  &ctx->curr_value, ctx->curr_value_set);
             if (ret < 0) {
                 bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                 ctx->ret_code = PASS_ACTION_FINAL_CTX;
@@ -502,9 +484,9 @@ static int metadata_processing_loop(uint32_t index, void *data) {
             }
 
             if (ret == TCP_NEW) {
-                *value_set = 1;
+                ctx->curr_value_set = 1;
             } else if (ret == PASS_ACTION_DEL_VALUE) {
-                *value_set = 0;
+                ctx->curr_value_set = 0;
             }
 
             if (ret == TCP_NEW || ctx->map_curr_value == NULL) {
@@ -555,7 +537,7 @@ static int metadata_processing_loop(uint32_t index, void *data) {
         // This is a trick to ensure the first N packets are skipped
         if (pkt.l4proto == 0) {
             bpf_log_debug("Skip this packet since the info are 0ed\n");
-            return 0;
+            goto PASS_ACTION;
         } else {
             struct ct_k local_key = {0};
             conntrack_get_key(&local_key, &pkt, &local_ipRev, &local_portRev);
@@ -564,27 +546,27 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                 local_key.srcPort == ctx->curr_pkt_key.srcPort && local_key.dstPort == ctx->curr_pkt_key.dstPort &&
                 local_key.l4proto == ctx->curr_pkt_key.l4proto) {
                 bpf_log_debug("Pkt has same key has current packet, use local variable");
-                bpf_log_debug("Curr_value_set: %d", *value_set);
-                if (*value_set == 0) {
+                bpf_log_debug("Curr_value_set: %d", ctx->curr_value_set);
+                if (ctx->curr_value_set == 0) {
                     bpf_log_debug("Lookup entry in the map");
                     ctx->map_curr_value =
                         cuckoo_connections_cuckoo_lookup(ctx->cuckoo_map, &local_key);
                     if (ctx->map_curr_value) {
                         bpf_log_debug("Setting map_curr_value");
                         memcpy(&ctx->curr_value, ctx->map_curr_value, sizeof(ctx->curr_value));
-                        *value_set = 1;
+                        ctx->curr_value_set = 1;
                     }
                 }
                 // Keys are equals, we have same connection as current pkt
                 ret =
                     advance_tcp_state_machine_local(ctx->cuckoo_map, &local_key, &pkt, &local_ipRev, &local_portRev,
-                                                    &ctx->curr_value, *value_set);
+                                                    &ctx->curr_value, ctx->curr_value_set);
                 if (ret == TCP_NEW) {
-                    *value_set = 1;
+                    ctx->curr_value_set = 1;
                 } else if (ret == PASS_ACTION_DEL_VALUE) {
-                    *value_set = 0;
+                    ctx->curr_value_set = 0;
                 }
-                bpf_log_debug("Curr_value_set: %d", *value_set);
+                bpf_log_debug("Curr_value_set: %d", ctx->curr_value_set);
                 if (ret < 0) {
                     bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
                     goto PASS_ACTION;
@@ -672,14 +654,6 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     conntrack_get_key(&loop_ctx.curr_pkt_key, &loop_ctx.curr_pkt, &loop_ctx.curr_ipRev,
                       &loop_ctx.curr_portRev);
-
-    uint32_t value_set_key = 0;
-    uint32_t *value_set = bpf_map_lookup_elem(&metadata_loop, &value_set_key);
-    if (value_set == NULL) {
-        bpf_log_debug("Value set not found in the map\n");
-        return 1;
-    }
-    *value_set = 0;
 
     loop_ctx.nh_off = nh_off_md;
     bpf_loop(conntrack_cfg.num_pkts, &metadata_processing_loop, &loop_ctx, 0);
