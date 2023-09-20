@@ -90,6 +90,8 @@ static int parse_packet(void *data, void *data_end, struct packetHeaders *pkt, _
     __u16 l3_proto;
     struct iphdr *iph;
 
+    __u32 offset = *nh_off;
+
     if (!validate_ethertype(data, data_end, &l3_proto, nh_off)) {
         bpf_log_warning("Unrecognized L3 protocol\n");
         goto DROP;
@@ -122,10 +124,12 @@ IP:;
     pkt->dstIp = iph->daddr;
     pkt->l4proto = iph->protocol;
 
+    bpf_log_debug("IPv4 packet. srcIp: %u, dstIp: %u, l4proto: %u\n", pkt->srcIp, pkt->dstIp, pkt->l4proto);
+
     if (iph->protocol == IPPROTO_TCP) {
         struct tcp_hdr *tcp = NULL;
-        tcp = (struct tcp_hdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
-        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*tcp) > data_end)
+        tcp = (struct tcp_hdr *)(data + offset + sizeof(struct ethhdr) + sizeof(*iph));
+        if (data + offset + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*tcp) > data_end)
             goto DROP;
         *nh_off += sizeof(*tcp);
         pkt->srcPort = tcp->source;
@@ -133,10 +137,11 @@ IP:;
         pkt->seqN = tcp->seq;
         pkt->ackN = tcp->ack_seq;
         pkt->flags = tcp->flags;
+        // bpf_log_debug("TCP packet. srcPort: %d, dstPort: %d\n", pkt->srcPort, pkt->dstPort);
     } else if (iph->protocol == IPPROTO_UDP) {
         struct udphdr *udp = NULL;
-        udp = (struct udphdr *)(data + sizeof(struct ethhdr) + sizeof(*iph));
-        if (data + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*udp) > data_end)
+        udp = (struct udphdr *)(data + offset + sizeof(struct ethhdr) + sizeof(*iph));
+        if (data + offset + sizeof(struct ethhdr) + sizeof(*iph) + sizeof(*udp) > data_end)
             goto DROP;
         *nh_off += sizeof(*udp);
         pkt->srcPort = udp->source;
@@ -144,6 +149,8 @@ IP:;
     } else {
         goto DROP;
     }
+
+    bpf_log_debug("Ports: %u -> %u\n", pkt->srcPort, pkt->dstPort);
 
     return 0;
 
