@@ -309,6 +309,9 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
             if (action == TCP_NEW) {
                 bpf_log_debug("TCP_NEW\n");
                 goto TCP_MISS;
+            } else if (action == PASS_ACTION && value->state == TIME_WAIT) {
+                cuckoo_connections_cuckoo_delete(cuckoo_map, &key);
+                return PASS_ACTION;
             } else {
                 return PASS_ACTION;
             }
@@ -342,7 +345,7 @@ advance_tcp_state_machine_full(struct cuckoo_connections_cuckoo_hash_map *cuckoo
 }
 
 static __always_inline int
-advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt, uint8_t *ipRev,
+advance_tcp_state_machine_local(struct cuckoo_connections_cuckoo_hash_map *cuckoo_map, struct ct_k *key, struct packetHeaders *pkt, uint8_t *ipRev,
                                 uint8_t *portRev, struct ct_v *value, bool *curr_value_set) {
     bool reverse = false;
     /* == TCP  == */
@@ -367,6 +370,10 @@ advance_tcp_state_machine_local(struct ct_k *key, struct packetHeaders *pkt, uin
             if (action == TCP_NEW) {
                 bpf_log_debug("TCP_NEW. Goto TCP_MISS\n");
                 goto TCP_MISS;
+            } else if (action == PASS_ACTION && value->state == TIME_WAIT) {
+                cuckoo_connections_cuckoo_delete(cuckoo_map, key);
+                *curr_value_set = false;
+                return PASS_ACTION;
             } else {
                 return PASS_ACTION;
             }
@@ -420,7 +427,7 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                 bpf_log_err("Error in advance_tcp_state_machine_full, ret: %d", ret);
             }
         } else {
-            ret = advance_tcp_state_machine_local(&ctx->curr_pkt_key, &ctx->curr_pkt,
+            ret = advance_tcp_state_machine_local(ctx->cuckoo_map, &ctx->curr_pkt_key, &ctx->curr_pkt,
                                                   &ctx->curr_ipRev, &ctx->curr_portRev,
                                                   &ctx->curr_value, &ctx->curr_value_set);
             if (ret < 0) {
@@ -495,7 +502,7 @@ static int metadata_processing_loop(uint32_t index, void *data) {
                 }
                 // Keys are equals, we have same connection as current pkt
                 ret =
-                    advance_tcp_state_machine_local(&local_key, &pkt, &local_ipRev, &local_portRev,
+                    advance_tcp_state_machine_local(ctx->cuckoo_map, &local_key, &pkt, &local_ipRev, &local_portRev,
                                                     &ctx->curr_value, &ctx->curr_value_set);
                 if (ret < 0) {
                     bpf_log_err("Error in advance_tcp_state_machine_local, ret: %d", ret);
