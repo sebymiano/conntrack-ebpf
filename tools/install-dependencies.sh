@@ -7,7 +7,7 @@ COLOR_OFF='\033[0m' # No Color
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 KERNEL_DOWNLOAD_SCRIPT=$DIR/get-verified-tarball.sh
-BPFTOOL_VERSION=5.13
+BPFTOOL_VERSION=latest
 
 function install_linux_bpftool {
   echo -e "${COLOR_GREEN} Installing Linux bpftool v${BPFTOOL_VERSION} ${COLOR_OFF}"
@@ -62,13 +62,13 @@ if [[ "${UBUNTU_VERSION}" == "20.04" ]]; then
   $SUDO bash -c "wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"
   $SUDO bash -c "echo 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal main' >> /etc/apt/sources.list"
   $SUDO bash -c "echo 'deb-src http://apt.llvm.org/focal/ llvm-toolchain-focal main' >> /etc/apt/sources.list"
-  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
+  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
 elif [[ "${UBUNTU_VERSION}" == "22.04" ]]; then
   echo -e "${COLOR_GREEN} Installing LLVM 18 ${COLOR_OFF}"
   $SUDO bash -c "wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"
   $SUDO bash -c "echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main' >> /etc/apt/sources.list"
   $SUDO bash -c "echo 'deb-src http://apt.llvm.org/jammy/ llvm-toolchain-jammy main' >> /etc/apt/sources.list"
-  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
+  PACKAGES+=" clang-18 clang-tools-18 clang-format-18 llvm llvm-18 llvm-18-dev llvm-18-tools llvm-18-runtime"
 else
   PACKAGES+=" clang-12 clang-tools-12 clang-format-12 llvm llvm-12 llvm-12-dev llvm-12-tools llvm-12-runtime "
 fi
