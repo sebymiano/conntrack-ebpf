@@ -59,33 +59,33 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     uint64_t timestamp;
     if (pkt.srcIp == pkt.dstIp) {
         if (pkt.srcPort <= pkt.dstPort) {
-            pkt.srcPort = pkt.srcPort;
-            pkt.dstPort = pkt.dstPort;
+            key.srcPort = pkt.srcPort;
+            key.dstPort = pkt.dstPort;
             portRev = 0;
             ipRev = 0;
         } else {
-            pkt.srcPort = pkt.dstPort;
-            pkt.dstPort = pkt.srcPort;
+            key.srcPort = pkt.dstPort;
+            key.dstPort = pkt.srcPort;
             portRev = 1;
             ipRev = 1;
         }
     } else if (pkt.srcIp < pkt.dstIp) {
-        pkt.srcIp = pkt.srcIp;
-        pkt.dstIp = pkt.dstIp;
-        pkt.srcPort = pkt.srcPort;
-        pkt.dstPort = pkt.dstPort;
+        key.srcIp = pkt.srcIp;
+        key.dstIp = pkt.dstIp;
+        key.srcPort = pkt.srcPort;
+        key.dstPort = pkt.dstPort;
         ipRev = 0;
         portRev = 0;
     } else {
-        pkt.srcIp = pkt.dstIp;
-        pkt.dstIp = pkt.srcIp;
-        pkt.srcPort = pkt.dstPort;
-        pkt.dstPort = pkt.srcPort;
+        key.srcIp = pkt.dstIp;
+        key.dstIp = pkt.srcIp;
+        key.srcPort = pkt.dstPort;
+        key.dstPort = pkt.srcPort;
         ipRev = 1;
         portRev = 1;
     }
 
-    pkt.l4proto = pkt.l4proto;
+    key.l4proto = pkt.l4proto;
 
     struct ct_v newEntry;
     memset(&newEntry, 0, sizeof(newEntry));
@@ -446,6 +446,8 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
             newEntry.ipRev = ipRev;
             newEntry.portRev = portRev;
+
+            bpf_log_debug("New connection. Adding entry to map\n");
 
             bpf_map_update_elem(&connections, &key, &newEntry, BPF_ANY);
             goto PASS_ACTION;
