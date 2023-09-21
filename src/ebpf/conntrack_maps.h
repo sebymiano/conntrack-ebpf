@@ -50,4 +50,11 @@ struct {
     __uint(max_entries, 1);
 } metadata SEC(".maps");
 
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __type(key, __u32);
+    __type(value, __u64);
+    __uint(max_entries, 512);
+} count_map SEC(".maps");
+
 #endif // of __CONNTRACK_MAPS_H

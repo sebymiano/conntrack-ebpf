@@ -40,6 +40,15 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
     struct packetHeaders pkt;
     __u16 nh_off = 0;
 
+    __u64 *count_map_value;
+
+    __u32 hash_id = ctx->hash % 512; //TODO : change according to the current number of queue. But the map size would need to be changed too. Therefore it would be more practical to simply recompile this file with a different parameter.
+
+    count_map_value = bpf_map_lookup_elem(&count_map, &hash_id);
+    if (count_map_value)
+		NO_TEAR_INC(count_map_value);
+        // *value += 1;
+
     void *data = (void *)(long)ctx->data;
     void *data_end = (void *)(long)ctx->data_end;
 
