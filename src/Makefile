@@ -28,7 +28,7 @@ CUCKOO_BPF := ../libcuckoo/src/ebpf/lib/cuckoo_hash.h
 # libbpf to avoid dependency on system-wide headers, which could be missing or
 # outdated
 # INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(OUTPUT)/libxdp/include -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX))
-INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(dir $(VMLINUX)) -I$(LIBLOG_HDR)
+INCLUDES := -I$(OUTPUT) -I../libbpf/include/uapi -I$(LIBARGPARSE_SRC) -I$(LIBLOG_HDR)
 BPF_INCLUDES := -I$(dir $(CUCKOO_BPF))
 CFLAGS := -g -Wall -DLOG_USE_COLOR
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
@@ -131,13 +131,13 @@ $(LIBLOG_OBJ):
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(LIBLOG_SRC) -o $@
 
 # Build BPF code
-$(OUTPUT)/%.bpf.o: ebpf/%.bpf.c $(LIBBPF_OBJ) $(wildcard ebpf/%.h) $(VMLINUX) | $(OUTPUT)
+$(OUTPUT)/%.bpf.o: ebpf/%.bpf.c $(LIBBPF_OBJ) $(wildcard ebpf/%.h) | $(OUTPUT)
 	$(call msg,BPF,$@)
 	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) $(INCLUDES) $(BPF_INCLUDES) $(CLANG_BPF_SYS_INCLUDES) -c $(filter %.c,$^) -o $@
 	$(Q)$(LLVM_STRIP) -g $@ # strip useless DWARF info
 
 # Generate BPF skeletons
-$(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL) gen-vmlinux
+$(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
 	$(Q)$(BPFTOOL) gen skeleton $< > $@
 
