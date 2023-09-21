@@ -123,6 +123,7 @@ int main(int argc, const char **argv) {
     int duration = -1;
     int redirect_same_iface = 0;
     int quiet = 0;
+    int rsspp_queues = 512;
 
     // Disabled by default
     int log_level = 0;
@@ -146,6 +147,7 @@ int main(int argc, const char **argv) {
         OPT_BOOLEAN('r', "redir_same_iface", &redirect_same_iface, "Redirect packet back on iface1",
                     NULL, 0, 0),
         OPT_BOOLEAN('q', "quiet", &quiet, "Do not print stats", NULL, 0, 0),
+        OPT_INTEGER('a', "rsspp_queues", &rsspp_queues, "Number of RSS++ queues", NULL, 0, 0),
         OPT_STRING('o', "out_file", &output_file, "Save results into an output csv file", NULL, 0,
                    0),
         OPT_END(),
@@ -274,6 +276,7 @@ int main(int argc, const char **argv) {
     skel->rodata->conntrack_cfg.enable_spin_locks = use_spinlocks;
     skel->rodata->conntrack_cfg.redirect_same_iface = redirect_same_iface;
     skel->rodata->conntrack_cfg.quiet = quiet;
+    skel->rodata->conntrack_cfg.queues_rsspp = rsspp_queues;
 
     // This is not used
     memcpy(skel->rodata->conntrack_mac_cfg.if1_src_mac, if1_mac, 6);

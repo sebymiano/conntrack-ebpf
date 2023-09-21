@@ -42,7 +42,10 @@ int xdp_conntrack_prog(struct xdp_md *ctx) {
 
     __u64 *count_map_value;
 
-    __u32 hash_id = ctx->hash % 512; //TODO : change according to the current number of queue. But the map size would need to be changed too. Therefore it would be more practical to simply recompile this file with a different parameter.
+    __u32 hash_id = ctx->hash % conntrack_cfg.queues_rsspp; //TODO : change according to the current number of queue. But the map size would need to be changed too. Therefore it would be more practical to simply recompile this file with a different parameter.
+
+    // bpf_log_err("Hash id: %u\n", hash_id);
+    // bpf_log_err("Hash value: %u\n", ctx->hash);
 
     count_map_value = bpf_map_lookup_elem(&count_map, &hash_id);
     if (count_map_value)

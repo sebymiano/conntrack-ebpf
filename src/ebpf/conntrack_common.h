@@ -64,6 +64,7 @@ const volatile struct {
     __u8 enable_flow_affinity;
     __u8 redirect_same_iface;
     __u8 quiet;
+    __u32 queues_rsspp;
 } conntrack_cfg = {};
 
 const volatile struct {
